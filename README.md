@@ -121,7 +121,7 @@ tinyetl remote_data.csv local.db --dry-run
 → 8 columns detected
 → Connecting to target: local.db#sales
 → Copying 100,000 rows
-████████████ 100% (45k rows/sec)
+████████████ 100% (145k rows/sec)
 → Done in 2.3s
 ```
 
