@@ -2,6 +2,7 @@ pub mod csv;
 pub mod json;
 pub mod sqlite;
 pub mod postgres;
+pub mod mysql;
 pub mod parquet;
 
 use async_trait::async_trait;
@@ -68,22 +69,41 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
 }
 
 /// Factory function to create a target connector from a connection string
-/// For new protocol-based connections (snowflake://, etc.), use create_target_from_url instead
+/// Supports both protocol-based and legacy file-based connections
 pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
+    // Handle protocol-based connections first
+    if connection_string.contains("://") {
+        if connection_string.starts_with("sqlite://") {
+            return Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?));
+        } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
+            return Ok(Box::new(postgres::PostgresTarget::new(connection_string)?));
+        } else if connection_string.starts_with("mysql://") {
+            return Ok(Box::new(mysql::MysqlTarget::new(connection_string)?));
+        } else {
+            return Err(crate::TinyEtlError::Configuration(format!(
+                "Unsupported protocol in: {}. Supported protocols: sqlite://, postgres://, mysql://",
+                connection_string
+            )));
+        }
+    }
+
+    // Handle legacy file-based and non-protocol database connections
     if connection_string.ends_with(".csv") {
         Ok(Box::new(csv::CsvTarget::new(connection_string)?))
     } else if connection_string.ends_with(".json") {
         Ok(Box::new(json::JsonTarget::new(connection_string)?))
     } else if connection_string.ends_with(".parquet") {
         Ok(Box::new(parquet::ParquetTarget::new(connection_string)?))
-    } else if (connection_string.contains(".db#") || connection_string.ends_with(".db")) || connection_string.starts_with("sqlite:") {
+    } else if connection_string.contains(".db#") || connection_string.ends_with(".db") || connection_string.starts_with("sqlite:") {
+        // Legacy SQLite support: file.db, file.db#table, sqlite:file.db
         Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?))
-    } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
-        Ok(Box::new(postgres::PostgresTarget::new(connection_string)?))
     } else {
-        Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported target type: {}. Supported formats: file.csv, file.json, file.parquet, file.db, file.db#table, postgres://user:pass@host:port/db", connection_string)
-        ))
+        Err(crate::TinyEtlError::Configuration(format!(
+            "Unsupported target type: {}. Supported formats: \
+            file.csv, file.json, file.parquet, file.db, file.db#table, \
+            sqlite://path/file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table",
+            connection_string
+        )))
     }
 }
 
@@ -94,7 +114,13 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
 pub async fn create_source_from_url(connection_string: &str) -> Result<Box<dyn Source>> {
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
-        crate::protocols::create_source_from_url(connection_string).await
+        // Try database connectors first for database protocols
+        if connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
+            create_source(connection_string)
+        } else {
+            // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)
+            crate::protocols::create_source_from_url(connection_string).await
+        }
     } else {
         // Fallback to legacy connector system for backward compatibility
         create_source(connection_string)
@@ -105,7 +131,13 @@ pub async fn create_source_from_url(connection_string: &str) -> Result<Box<dyn S
 pub async fn create_target_from_url(connection_string: &str) -> Result<Box<dyn Target>> {
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
-        crate::protocols::create_target_from_url(connection_string).await
+        // Try database connectors first for database protocols
+        if connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") || connection_string.starts_with("mysql://") {
+            create_target(connection_string)
+        } else {
+            // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)
+            crate::protocols::create_target_from_url(connection_string).await
+        }
     } else {
         // Fallback to legacy connector system for backward compatibility
         create_target(connection_string)
@@ -214,8 +246,20 @@ mod tests {
     }
     
     #[test]
+    fn test_create_sqlite_protocol_target() {
+        let target = create_target("sqlite://output.db#mytable");
+        assert!(target.is_ok());
+    }
+    
+    #[test]
     fn test_create_postgres_target() {
         let target = create_target("postgres://user:pass@localhost:5432/db");
+        assert!(target.is_ok());
+    }
+    
+    #[test]
+    fn test_create_postgres_target_with_table() {
+        let target = create_target("postgres://user:pass@localhost:5432/db#mytable");
         assert!(target.is_ok());
     }
     
@@ -226,8 +270,26 @@ mod tests {
     }
     
     #[test]
+    fn test_create_mysql_target() {
+        let target = create_target("mysql://user:pass@localhost:3306/db");
+        assert!(target.is_ok());
+    }
+    
+    #[test]
+    fn test_create_mysql_target_with_table() {
+        let target = create_target("mysql://user:pass@localhost:3306/db#mytable");
+        assert!(target.is_ok());
+    }
+    
+    #[test]
     fn test_create_unsupported_target() {
         let target = create_target("output.xlsx");
+        assert!(target.is_err());
+    }
+    
+    #[test]
+    fn test_create_unsupported_protocol() {
+        let target = create_target("redis://localhost:6379");
         assert!(target.is_err());
     }
 }

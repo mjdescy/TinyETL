@@ -25,6 +25,11 @@ pub trait Protocol: Send + Sync {
 
 /// Factory function to create a protocol handler based on URL scheme
 pub fn create_protocol(url: &str) -> Result<Box<dyn Protocol>> {
+    // For backward compatibility, handle file paths that aren't valid URLs
+    if !url.contains("://") && (url.contains('.') || url.starts_with('/')) {
+        return Ok(Box::new(file::FileProtocol::new()));
+    }
+    
     let parsed_url = Url::parse(url).map_err(|e| {
         TinyEtlError::Configuration(format!("Invalid URL '{}': {}", url, e))
     })?;
@@ -33,14 +38,9 @@ pub fn create_protocol(url: &str) -> Result<Box<dyn Protocol>> {
         "file" => Ok(Box::new(file::FileProtocol::new())),
         "snowflake" => Ok(Box::new(snowflake::SnowflakeProtocol::new())),
         scheme => {
-            // For backward compatibility, treat URLs without schemes as file paths
-            if scheme.is_empty() || url.contains('.') && !url.contains("://") {
-                Ok(Box::new(file::FileProtocol::new()))
-            } else {
-                Err(TinyEtlError::Configuration(
-                    format!("Unsupported protocol: {}. Supported protocols: file://, snowflake://", scheme)
-                ))
-            }
+            Err(TinyEtlError::Configuration(
+                format!("Unsupported protocol: {}. Supported protocols: file://, snowflake://", scheme)
+            ))
         }
     }
 }

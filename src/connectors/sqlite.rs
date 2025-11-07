@@ -207,18 +207,25 @@ pub struct SqliteTarget {
 
 impl SqliteTarget {
     pub fn new(connection_string: &str) -> Result<Self> {
-        // Parse connection string - could be "file.db" or "sqlite:file.db#table" or "file.db#table"
-        let (db_path, table) = if connection_string.contains('#') {
-            let parts: Vec<&str> = connection_string.split('#').collect();
+        // Parse connection string - support multiple formats:
+        // - "file.db" or "file.db#table" (legacy)
+        // - "sqlite:file.db" or "sqlite:file.db#table" 
+        // - "sqlite://file.db" or "sqlite://file.db#table"
+        let normalized = connection_string
+            .trim_start_matches("sqlite://")
+            .trim_start_matches("sqlite:");
+            
+        let (db_path, table) = if normalized.contains('#') {
+            let parts: Vec<&str> = normalized.split('#').collect();
             if parts.len() != 2 {
                 return Err(TinyEtlError::Configuration(
-                    "SQLite connection string format: file.db#table".to_string()
+                    "SQLite connection string format: file.db#table or sqlite://file.db#table".to_string()
                 ));
             }
-            (parts[0].trim_start_matches("sqlite:"), parts[1])
+            (parts[0], parts[1])
         } else {
             // Default table name if not specified
-            (connection_string.trim_start_matches("sqlite:"), "data")
+            (normalized, "data")
         };
 
         Ok(Self {

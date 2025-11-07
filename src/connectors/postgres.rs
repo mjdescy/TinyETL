@@ -273,17 +273,23 @@ pub struct PostgresTarget {
 
 impl PostgresTarget {
     pub fn new(connection_string: &str) -> Result<Self> {
-        // Remove any table specification for target
-        let conn_str = if connection_string.contains('#') {
-            connection_string.split('#').next().unwrap()
+        // Parse table name from connection string
+        let (conn_str, table_name) = if connection_string.contains('#') {
+            let parts: Vec<&str> = connection_string.split('#').collect();
+            if parts.len() != 2 {
+                return Err(TinyEtlError::Configuration(
+                    "PostgreSQL connection string format: postgres://user:pass@host:port/db#table".to_string()
+                ));
+            }
+            (parts[0].to_string(), Some(parts[1].to_string()))
         } else {
-            connection_string
+            (connection_string.to_string(), None)
         };
 
         Ok(Self {
-            connection_string: conn_str.to_string(),
+            connection_string: conn_str,
             pool: None,
-            table_name: None,
+            table_name,
             schema: None,
         })
     }
@@ -307,10 +313,18 @@ impl Target for PostgresTarget {
         let pool = self.pool.as_ref()
             .ok_or_else(|| TinyEtlError::Connection("Not connected".to_string()))?;
 
-        self.table_name = Some(table_name.to_string());
+        // Determine the actual table name to use
+        let actual_table_name = if table_name.is_empty() {
+            self.table_name.clone().unwrap_or_else(|| "data".to_string())
+        } else {
+            table_name.to_string()
+        };
+
+        // Update internal table name
+        self.table_name = Some(actual_table_name.clone());
         self.schema = Some(schema.clone());
 
-        let mut create_sql = format!("CREATE TABLE {} (", table_name);
+        let mut create_sql = format!("CREATE TABLE {} (", actual_table_name);
         
         let column_defs: Vec<String> = schema.columns.iter().map(|col| {
             let pg_type = match col.data_type {
