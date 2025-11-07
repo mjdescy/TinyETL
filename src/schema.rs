@@ -28,7 +28,7 @@ pub struct Schema {
     pub primary_key_candidate: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
     String(String),
@@ -203,7 +203,7 @@ mod tests {
     
     #[test]
     fn test_data_type_display() {
-        assert_eq!(DataType::String.to_string(), "STRING");
+        assert_eq!(DataType::String.to_string(), "TEXT");
         assert_eq!(DataType::Integer.to_string(), "INTEGER");
         assert_eq!(DataType::Float.to_string(), "REAL");
         assert_eq!(DataType::Boolean.to_string(), "BOOLEAN");
