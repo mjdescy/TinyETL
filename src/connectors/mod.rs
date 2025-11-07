@@ -2,6 +2,7 @@ pub mod csv;
 pub mod json;
 pub mod sqlite;
 pub mod postgres;
+pub mod parquet;
 
 use async_trait::async_trait;
 use crate::{Result, schema::{Schema, Row}};
@@ -51,6 +52,8 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(csv::CsvSource::new(connection_string)?))
     } else if connection_string.ends_with(".json") {
         Ok(Box::new(json::JsonSource::new(connection_string)?))
+    } else if connection_string.ends_with(".parquet") {
+        Ok(Box::new(parquet::ParquetSource::new(connection_string)?))
     } else if (connection_string.contains(".db#") || connection_string.ends_with(".db"))
         || connection_string.starts_with("sqlite:") {
         Ok(Box::new(sqlite::SqliteSource::new(connection_string)?))
@@ -58,7 +61,7 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(postgres::PostgresSource::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.db#table, postgres://user:pass@host:port/db#table", connection_string)
+            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.db#table, postgres://user:pass@host:port/db#table", connection_string)
         ))
     }
 }
@@ -69,13 +72,15 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
         Ok(Box::new(csv::CsvTarget::new(connection_string)?))
     } else if connection_string.ends_with(".json") {
         Ok(Box::new(json::JsonTarget::new(connection_string)?))
+    } else if connection_string.ends_with(".parquet") {
+        Ok(Box::new(parquet::ParquetTarget::new(connection_string)?))
     } else if connection_string.ends_with(".db") || connection_string.starts_with("sqlite:") {
         Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?))
     } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
         Ok(Box::new(postgres::PostgresTarget::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported target type: {}. Supported formats: file.csv, file.json, file.db, postgres://user:pass@host:port/db", connection_string)
+            format!("Unsupported target type: {}. Supported formats: file.csv, file.json, file.parquet, file.db, postgres://user:pass@host:port/db", connection_string)
         ))
     }
 }
@@ -93,6 +98,12 @@ mod tests {
     #[test]
     fn test_create_json_source() {
         let source = create_source("test.json");
+        assert!(source.is_ok());
+    }
+    
+    #[test]
+    fn test_create_parquet_source() {
+        let source = create_source("test.parquet");
         assert!(source.is_ok());
     }
     
@@ -154,6 +165,12 @@ mod tests {
     #[test]
     fn test_create_json_target() {
         let target = create_target("output.json");
+        assert!(target.is_ok());
+    }
+    
+    #[test]
+    fn test_create_parquet_target() {
+        let target = create_target("output.parquet");
         assert!(target.is_ok());
     }
     
