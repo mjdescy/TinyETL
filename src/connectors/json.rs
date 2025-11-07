@@ -5,7 +5,8 @@ use serde_json;
 use crate::{
     Result, TinyEtlError,
     schema::{Schema, Row, Value, SchemaInferer},
-    connectors::{Source, Target}
+    connectors::{Source, Target},
+    date_parser::DateParser,
 };
 
 pub struct JsonSource {
@@ -25,7 +26,14 @@ impl JsonSource {
     
     fn json_value_to_value(&self, json_val: &serde_json::Value) -> Value {
         match json_val {
-            serde_json::Value::String(s) => Value::String(s.clone()),
+            serde_json::Value::String(s) => {
+                // Try to parse string as date first, fall back to string
+                if let Some(date_value) = DateParser::try_parse(s) {
+                    date_value
+                } else {
+                    Value::String(s.clone())
+                }
+            },
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Value::Integer(i)

@@ -32,8 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match TransferEngine::execute(&config, source, target).await {
         Ok(stats) => {
             if !config.preview.is_some() && !config.dry_run {
-                info!("✅ Transfer completed successfully!");
-                info!("📊 Processed {} rows in {:.2}s ({:.0} rows/sec)", 
+                info!("Transfer completed successfully!");
+                info!("Processed {} rows in {:.2}s ({:.0} rows/sec)", 
                     stats.total_rows, 
                     stats.total_time.as_secs_f64(),
                     stats.rows_per_second
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Err(e) => {
-            error!("❌ Transfer failed: {}", e);
+            error!("Transfer failed: {}", e);
             std::process::exit(1);
         }
     }

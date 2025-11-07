@@ -117,24 +117,36 @@ impl TransferEngine {
         schema: &Schema,
         preview_rows: usize,
     ) -> Result<TransferStats> {
-        println!("\n📋 Schema Preview:");
-        println!("┌─────────────────────┬─────────────┬──────────┐");
-        println!("│ Column              │ Type        │ Nullable │");
-        println!("├─────────────────────┼─────────────┼──────────┤");
+        println!("\nSchema Preview:");
+        println!("┌─────────────────────┬───────────────┬──────────┐");
+        println!("│ Column              │ Type          │ Nullable │");
+        println!("├─────────────────────┼───────────────┼──────────┤");
         
         for column in &schema.columns {
-            println!("│ {:<19} │ {:<11} │ {:<8} │", 
+            println!("│ {:<19} │ {:<13} │ {:<8} │", 
                 column.name, column.data_type, column.nullable);
         }
-        println!("└─────────────────────┴─────────────┴──────────┘");
+        println!("└─────────────────────┴───────────────┴──────────┘");
 
-        println!("\n📊 Data Preview ({} rows):", preview_rows);
+        println!("\nData Preview ({} rows):", preview_rows);
         source.reset().await?;
         let sample_data = source.read_batch(preview_rows).await?;
         
         if !sample_data.is_empty() {
             // Print column headers
             let headers: Vec<&String> = sample_data[0].keys().collect();
+            
+            // Print top border
+            print!("┌");
+            for i in 0..headers.len() {
+                print!("─────────────────");
+                if i < headers.len() - 1 {
+                    print!("┬");
+                }
+            }
+            println!("┐");
+            
+            // Print headers
             print!("│");
             for header in &headers {
                 print!(" {:<15} │", header);
@@ -143,10 +155,13 @@ impl TransferEngine {
             
             // Print separator
             print!("├");
-            for _ in &headers {
-                print!("─────────────────┼");
+            for i in 0..headers.len() {
+                print!("─────────────────");
+                if i < headers.len() - 1 {
+                    print!("┼");
+                }
             }
-            println!();
+            println!("┤");
             
             // Print data rows
             for row in &sample_data {
@@ -160,6 +175,16 @@ impl TransferEngine {
                 }
                 println!();
             }
+            
+            // Print bottom border
+            print!("└");
+            for i in 0..headers.len() {
+                print!("─────────────────");
+                if i < headers.len() - 1 {
+                    print!("┴");
+                }
+            }
+            println!("┘");
         }
 
         Ok(TransferStats {
@@ -175,23 +200,23 @@ impl TransferEngine {
         target: Box<dyn Target>,
         schema: &Schema,
     ) -> Result<TransferStats> {
-        info!("🔍 Dry run mode - validating connections and schema");
+        info!("Dry run mode - validating connections and schema");
         
         let estimated_rows = source.estimated_row_count().await?.unwrap_or(0);
-        info!("✓ Source connection validated");
-        info!("✓ Schema inferred: {} columns", schema.columns.len());
-        info!("✓ Estimated rows: {}", estimated_rows);
+        info!("Source connection validated");
+        info!("Schema inferred: {} columns", schema.columns.len());
+        info!("Estimated rows: {}", estimated_rows);
         
         let table_name = Self::extract_table_name("dummy");
         let table_exists = target.exists(&table_name).await?;
         
         if table_exists {
-            warn!("⚠ Target table '{}' already exists", table_name);
+            warn!("Target table '{}' already exists", table_name);
         } else {
-            info!("✓ Target table '{}' will be created", table_name);
+            info!("Target table '{}' will be created", table_name);
         }
         
-        info!("✓ Dry run completed successfully");
+        info!("Dry run completed successfully");
 
         Ok(TransferStats {
             total_rows: 0,

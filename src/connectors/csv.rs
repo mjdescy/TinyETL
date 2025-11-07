@@ -7,7 +7,8 @@ use serde_json;
 use crate::{
     Result, TinyEtlError,
     schema::{Schema, Row, Value, SchemaInferer},
-    connectors::{Source, Target}
+    connectors::{Source, Target},
+    date_parser::DateParser,
 };
 
 pub struct CsvSource {
@@ -91,9 +92,9 @@ impl CsvSource {
             return Value::Boolean(bool_val);
         }
         
-        // Try datetime (basic ISO format)
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
-            return Value::Date(dt.with_timezone(&chrono::Utc));
+        // Try date/datetime using the shared parser
+        if let Some(date_value) = DateParser::try_parse(value) {
+            return date_value;
         }
         
         // Default to string
