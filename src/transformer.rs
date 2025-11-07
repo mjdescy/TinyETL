@@ -26,6 +26,7 @@ impl Default for TransformConfig {
 }
 
 /// Row transformer using Lua scripting
+#[derive(Debug)]
 pub struct Transformer {
     lua: Lua,
     has_transform: bool,
@@ -389,5 +390,271 @@ mod tests {
         let col_names: Vec<_> = schema.columns.iter().map(|c| &c.name).collect();
         assert!(col_names.contains(&&"new_col".to_string()));
         assert!(col_names.contains(&&"str_col".to_string()));
+    }
+
+    #[test]
+    fn test_transform_file_missing() {
+        let config = TransformConfig::File("non_existent.lua".to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Transform file not found"));
+    }
+
+    #[test]
+    fn test_invalid_inline_expression_no_equals() {
+        let config = TransformConfig::Inline("invalid syntax without equals".to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid expression format"));
+    }
+
+    #[test]
+    fn test_invalid_column_name() {
+        let config = TransformConfig::Inline("invalid-name=42".to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid column name"));
+    }
+
+    #[test]
+    fn test_empty_expressions() {
+        let config = TransformConfig::Inline("".to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No valid expressions provided"));
+    }
+
+    #[test]
+    fn test_transform_batch_empty() {
+        let config = TransformConfig::Inline("new_col=42".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let result = transformer.transform_batch(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_transform_batch_disabled() {
+        let config = TransformConfig::None;
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test".to_string(), Value::String("value".to_string()));
+        
+        let result = transformer.transform_batch(&[row.clone()]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], row);
+    }
+
+    #[test]
+    fn test_different_value_types() {
+        let config = TransformConfig::Inline("int_col=42; float_col=3.14; bool_col=true; str_col='hello'".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+
+        let row = HashMap::new();
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let transformed = &result[0];
+        assert_eq!(transformed.get("int_col"), Some(&Value::Integer(42)));
+        assert_eq!(transformed.get("float_col"), Some(&Value::Float(3.14)));
+        assert_eq!(transformed.get("bool_col"), Some(&Value::Boolean(true)));
+        assert_eq!(transformed.get("str_col"), Some(&Value::String("hello".to_string())));
+        // Note: nil values in Lua don't create table entries, so we don't test null_col here
+    }
+
+    #[test]
+    fn test_schema_merge_with_base() {
+        let config = TransformConfig::None;
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let base_schema = Schema {
+            columns: vec![Column {
+                name: "test".to_string(),
+                data_type: DataType::String,
+                nullable: false,
+            }],
+            estimated_rows: Some(100),
+            primary_key_candidate: None,
+        };
+        
+        let merged = transformer.merge_with_base_schema(&base_schema).unwrap();
+        assert_eq!(merged.columns.len(), 1);
+        assert_eq!(merged.columns[0].name, "test");
+    }
+
+    #[test]
+    fn test_validate_and_filter_row_missing_columns() {
+        let config = TransformConfig::Inline("new_col=42".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        // First transform to establish schema
+        let row = HashMap::new();
+        transformer.transform_batch(&[row]).unwrap();
+        
+        // Test with a row missing expected columns
+        let mut incomplete_row = HashMap::new();
+        incomplete_row.insert("extra".to_string(), Value::String("extra".to_string()));
+        
+        let validated = transformer.validate_and_filter_row(incomplete_row).unwrap();
+        assert!(validated.contains_key("new_col"));
+        assert_eq!(validated.get("new_col"), Some(&Value::Null));
+    }
+
+    #[test]
+    fn test_row_to_lua_table_and_back() {
+        let config = TransformConfig::Inline("result_col=row.test_col".to_string());
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test_col".to_string(), Value::String("test_value".to_string()));
+        
+        // Test conversion to Lua table
+        let lua_table = transformer.row_to_lua_table(&row).unwrap();
+        
+        // Test conversion back to row
+        let converted_row = transformer.lua_table_to_row(lua_table).unwrap();
+        assert_eq!(converted_row.get("test_col"), Some(&Value::String("test_value".to_string())));
+    }
+
+    #[test]
+    fn test_date_value_conversion() {
+        let config = TransformConfig::Inline("date_col=row.input_date".to_string());
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let date = chrono::Utc::now();
+        let mut row = HashMap::new();
+        row.insert("input_date".to_string(), Value::Date(date));
+        
+        let lua_table = transformer.row_to_lua_table(&row).unwrap();
+        let converted_row = transformer.lua_table_to_row(lua_table).unwrap();
+        
+        // Date should be converted to string in RFC3339 format
+        match converted_row.get("input_date") {
+            Some(Value::String(s)) => {
+                assert!(s.contains("T")); // RFC3339 format contains 'T'
+            }
+            _ => panic!("Expected string representation of date"),
+        }
+    }
+
+    #[test] 
+    fn test_lua_file_transformation() {
+        use std::fs;
+        use std::path::Path;
+        
+        // Create a temporary Lua file
+        let lua_content = r#"
+function transform(row)
+    local result = {}
+    if row.name then
+        result.upper_name = string.upper(row.name)
+        result.name_length = string.len(row.name)
+    end
+    return result
+end
+"#;
+        
+        let temp_file = "/tmp/test_transform.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        assert!(transformer.is_enabled());
+        
+        let mut row = HashMap::new();
+        row.insert("name".to_string(), Value::String("john".to_string()));
+        
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let transformed = &result[0];
+        assert_eq!(transformed.get("upper_name"), Some(&Value::String("JOHN".to_string())));
+        assert_eq!(transformed.get("name_length"), Some(&Value::Integer(4)));
+        
+        // Clean up
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_lua_file_invalid_syntax() {
+        use std::fs;
+        
+        let lua_content = "invalid lua syntax {{{";
+        let temp_file = "/tmp/test_invalid.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_lua_file_missing_transform_function() {
+        use std::fs;
+        
+        let lua_content = r#"
+function other_function()
+    return "not transform"
+end
+"#;
+        let temp_file = "/tmp/test_no_transform.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let result = Transformer::new(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must contain a 'transform' function"));
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_multiple_batch_transforms() {
+        let config = TransformConfig::Inline("counter=1; batch_col=row.input or 'default'".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        // First batch
+        let mut row1 = HashMap::new();
+        row1.insert("input".to_string(), Value::String("first".to_string()));
+        let result1 = transformer.transform_batch(&[row1]).unwrap();
+        
+        // Second batch
+        let mut row2 = HashMap::new(); 
+        row2.insert("input".to_string(), Value::String("second".to_string()));
+        let result2 = transformer.transform_batch(&[row2]).unwrap();
+        
+        assert_eq!(result1.len(), 1);
+        assert_eq!(result2.len(), 1);
+        
+        // Both should have the schema applied
+        assert!(result1[0].contains_key("counter"));
+        assert!(result2[0].contains_key("counter"));
+    }
+
+    #[test]
+    fn test_mixed_value_types_in_lua() {
+        let config = TransformConfig::Inline("mixed=type(row.value) == 'number' and row.value * 2 or 'not_number'".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row1 = HashMap::new();
+        row1.insert("value".to_string(), Value::Integer(21));
+        let result1 = transformer.transform_batch(&[row1]).unwrap();
+        
+        let mut row2 = HashMap::new();
+        row2.insert("value".to_string(), Value::String("text".to_string()));
+        let result2 = transformer.transform_batch(&[row2]).unwrap();
+        
+        assert_eq!(result1[0].get("mixed"), Some(&Value::Integer(42)));
+        assert_eq!(result2[0].get("mixed"), Some(&Value::String("not_number".to_string())));
+    }
+
+    #[test]
+    fn test_default_implementation() {
+        let config = TransformConfig::default();
+        let transformer = Transformer::new(&config).unwrap();
+        assert!(!transformer.is_enabled());
     }
 }
