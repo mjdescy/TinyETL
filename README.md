@@ -12,7 +12,7 @@ TinyETL is designed to make data movement simple and efficient. Point it at a so
 
 - **Automatic Schema Inference**: Detects column names and data types automatically
 - **Data Transformations**: Transform data during transfer using Lua scripting
-- **Multiple Connectors**: Support for CSV, JSON, Parquet, SQLite, Postgres (with more coming soon)
+- **Multiple Connectors**: Support for CSV, JSON, Parquet, SQLite, PostgreSQL, MySQL (with more coming soon)
 - **Batch Processing**: Efficient streaming with configurable batch sizes
 - **Progress Monitoring**: Real-time progress bars and transfer statistics
 - **Preview Mode**: Inspect data and schema without transferring
@@ -68,6 +68,9 @@ tinyetl data.csv output.parquet
 # Load CSV into PostgreSQL
 tinyetl data.csv "postgresql://user:pass@localhost/mydb#customers"
 
+# Load CSV into MySQL
+tinyetl data.csv "mysql://user:pass@localhost:3306/mydb#customers"
+
 # Preview first 10 rows and inferred schema
 tinyetl data.csv output.db --preview 10
 
@@ -92,6 +95,7 @@ tinyetl data.csv output.db --transform-file transform.lua
 - Parquet files
 - SQLite databases
 - PostgreSQL databases
+- MySQL databases
 
 **Targets:**
 - CSV files
@@ -99,6 +103,65 @@ tinyetl data.csv output.db --transform-file transform.lua
 - Parquet files
 - SQLite databases
 - PostgreSQL databases
+- MySQL databases
+
+### Database Connection Strings
+
+TinyETL uses standard database connection URLs with an optional table specification using the `#` separator.
+
+**PostgreSQL:**
+```bash
+# Basic format
+postgresql://username:password@hostname:port/database#table_name
+
+# Examples
+tinyetl data.csv "postgresql://user:pass@localhost/mydb#customers"
+tinyetl data.csv "postgresql://admin:secret@db.example.com:5432/analytics#sales_data"
+```
+
+**MySQL:**
+```bash
+# Basic format  
+mysql://username:password@hostname:port/database#table_name
+
+# Examples
+tinyetl data.csv "mysql://user:pass@localhost:3306/mydb#customers"
+tinyetl data.csv "mysql://admin:secret@db.example.com:3306/analytics#sales_data"
+
+# Default table name is 'data' if not specified
+tinyetl data.csv "mysql://user:pass@localhost:3306/mydb"  # Creates table named 'data'
+```
+
+**SQLite:**
+```bash
+# File path (table name inferred from filename without extension)
+tinyetl data.csv output.db              # Creates table named 'output'
+tinyetl data.csv /path/to/database.db   # Creates table named 'database'
+
+# Explicit table name using connection string format
+tinyetl data.csv "sqlite:///path/to/database.db#custom_table"
+```
+
+**Important Notes:**
+- Table names are automatically created if they don't exist
+- For MySQL, the database must exist before running TinyETL
+- Connection strings should be quoted to prevent shell interpretation
+- Default ports: PostgreSQL (5432), MySQL (3306)
+
+**MySQL Setup Example:**
+```bash
+# Install MySQL (macOS with Homebrew)
+brew install mysql
+brew services start mysql
+
+# Create database and user
+mysql -u root -e "CREATE DATABASE mydb;"
+mysql -u root -e "CREATE USER 'myuser'@'localhost' IDENTIFIED BY 'mypass';"
+mysql -u root -e "GRANT ALL PRIVILEGES ON mydb.* TO 'myuser'@'localhost';"
+
+# Use with TinyETL
+tinyetl data.csv "mysql://myuser:mypass@localhost:3306/mydb#customers"
+```
 
 ### Data Transformations
 
@@ -276,6 +339,12 @@ tinyetl messy_data.csv clean.db --transform-file cleanup.lua --preview 3
 # Load Parquet files to PostgreSQL
 tinyetl large_dataset.parquet "postgresql://user:pass@localhost/db#table"
 
+# Load CSV to MySQL
+tinyetl customers.csv "mysql://user:pass@localhost:3306/mydb#customers"
+
+# Transfer between MySQL databases
+tinyetl "mysql://user1:pass1@host1:3306/sourcedb#sales" "mysql://user2:pass2@host2:3306/targetdb#sales_backup"
+
 # Convert CSV to Parquet format
 tinyetl data.csv output.parquet
 
@@ -316,14 +385,14 @@ If you wish to include TinyETL in a commercial SaaS or hosted product, please co
 ### Roadmap
 
 **MVP (Current Focus):**
-- Core CSV, JSON, SQLite connectors
-- Schema inference
-- Lua-based data transformations
-- Batch processing
-- Basic CLI interface
+- Core CSV, JSON, SQLite connectors ✅
+- MySQL and PostgreSQL connectors ✅
+- Schema inference ✅
+- Lua-based data transformations ✅
+- Batch processing ✅
+- Basic CLI interface ✅
 
 **Future Enhancements:**
-- MySQL and PostgreSQL connectors
 - Advanced transformation functions and libraries
 - Multi-file processing with glob patterns
 - Configuration file support
