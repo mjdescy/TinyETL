@@ -1,6 +1,7 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use async_trait::async_trait;
-use sqlx::{SqlitePool, Row as SqlxRow, Column};
+use sqlx::{SqlitePool, Row as SqlxRow, Column, sqlite::SqliteConnectOptions};
 
 use crate::{
     Result, TinyEtlError,
@@ -68,7 +69,7 @@ impl Source for SqliteSource {
         let pool = self.pool.as_ref().unwrap();
         
         // Get table info for column definitions
-        let table_info = sqlx::query(&format!("PRAGMA table_info({})", self.table_name))
+        let table_info = sqlx::query(&format!("PRAGMA table_info(\"{}\")", self.table_name))
             .fetch_all(pool)
             .await?;
 
@@ -96,7 +97,7 @@ impl Source for SqliteSource {
         }
 
         // Get estimated row count
-        let count_result = sqlx::query(&format!("SELECT COUNT(*) as count FROM {}", self.table_name))
+        let count_result = sqlx::query(&format!("SELECT COUNT(*) as count FROM \"{}\"", self.table_name))
             .fetch_one(pool)
             .await?;
         let estimated_rows: i64 = count_result.get("count");
@@ -116,7 +117,7 @@ impl Source for SqliteSource {
         let pool = self.pool.as_ref().unwrap();
         
         // Simple implementation - in practice we'd need proper pagination
-        let query = format!("SELECT * FROM {} LIMIT {}", self.table_name, batch_size);
+        let query = format!("SELECT * FROM \"{}\" LIMIT {}", self.table_name, batch_size);
         let rows = sqlx::query(&query).fetch_all(pool).await?;
         
         let mut result_rows = Vec::new();
@@ -248,21 +249,28 @@ impl Target for SqliteTarget {
 
         let pool = self.pool.as_ref().unwrap();
         
-        // Override table name if provided
+        // Determine the actual table name to use
         let actual_table_name = if table_name.is_empty() {
-            &self.table_name
+            self.table_name.clone()
         } else {
-            table_name
+            table_name.to_string()
         };
+
+        // Update our internal table name to match what we're actually creating
+        self.table_name = actual_table_name.clone();
 
         // Build CREATE TABLE statement
         let column_definitions: Vec<String> = schema.columns.iter().map(|col| {
             let nullable = if col.nullable { "" } else { " NOT NULL" };
-            format!("{} {}{}", col.name, col.data_type, nullable)
+            format!("\"{}\" {}{}", col.name, col.data_type, nullable)
         }).collect();
 
+        // Drop table if it exists to ensure fresh schema
+        let drop_sql = format!("DROP TABLE IF EXISTS \"{}\"", actual_table_name);
+        sqlx::query(&drop_sql).execute(pool).await?;
+
         let create_sql = format!(
-            "CREATE TABLE IF NOT EXISTS {} ({})",
+            "CREATE TABLE \"{}\" ({})",
             actual_table_name,
             column_definitions.join(", ")
         );
@@ -284,36 +292,54 @@ impl Target for SqliteTarget {
         
         // Get column names from first row
         let columns: Vec<String> = rows[0].keys().cloned().collect();
-        let placeholders = vec!["?"; columns.len()].join(", ");
         
-        let insert_sql = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
-            self.table_name,
-            columns.join(", "),
-            placeholders
-        );
+        // Quote column names to handle reserved keywords
+        let quoted_columns: Vec<String> = columns.iter().map(|col| format!("\"{}\"", col)).collect();
+        
+        // SQLite has a limit of ~999 variables, so we need to chunk our inserts
+        // Calculate max rows per chunk based on column count
+        let max_variables = 900; // Use 900 to be safe
+        let max_rows_per_chunk = max_variables / columns.len();
+        
+        let mut total_written = 0;
+        
+        // Process rows in chunks
+        for chunk in rows.chunks(max_rows_per_chunk) {
+            // Create batch insert with multiple value groups for this chunk
+            let placeholders_per_row = vec!["?"; columns.len()].join(", ");
+            let value_groups: Vec<String> = (0..chunk.len())
+                .map(|_| format!("({})", placeholders_per_row))
+                .collect();
+            
+            let insert_sql = format!(
+                "INSERT INTO \"{}\" ({}) VALUES {}",
+                self.table_name,
+                quoted_columns.join(", "),
+                value_groups.join(", ")
+            );
 
-        let mut written_count = 0;
-        for row in rows {
             let mut query = sqlx::query(&insert_sql);
             
-            for column in &columns {
-                let value = row.get(column).unwrap_or(&Value::Null);
-                query = match value {
-                    Value::String(s) => query.bind(s),
-                    Value::Integer(i) => query.bind(*i),
-                    Value::Float(f) => query.bind(*f),
-                    Value::Boolean(b) => query.bind(*b),
-                    Value::Date(dt) => query.bind(dt.to_rfc3339()),
-                    Value::Null => query.bind(None::<String>),
-                };
+            // Bind all values in row order for this chunk
+            for row in chunk {
+                for column in &columns {
+                    let value = row.get(column).unwrap_or(&Value::Null);
+                    query = match value {
+                        Value::String(s) => query.bind(s),
+                        Value::Integer(i) => query.bind(*i),
+                        Value::Float(f) => query.bind(*f),
+                        Value::Boolean(b) => query.bind(*b),
+                        Value::Date(dt) => query.bind(dt.to_rfc3339()),
+                        Value::Null => query.bind(None::<String>),
+                    };
+                }
             }
             
-            query.execute(pool).await?;
-            written_count += 1;
+            let result = query.execute(pool).await?;
+            total_written += result.rows_affected() as usize;
         }
-
-        Ok(written_count)
+        
+        Ok(total_written)
     }
 
     async fn finalize(&mut self) -> Result<()> {

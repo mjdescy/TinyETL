@@ -135,7 +135,7 @@ impl SchemaInferer {
 impl std::fmt::Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataType::String => write!(f, "STRING"),
+            DataType::String => write!(f, "TEXT"),
             DataType::Integer => write!(f, "INTEGER"),
             DataType::Float => write!(f, "REAL"),
             DataType::Boolean => write!(f, "BOOLEAN"),

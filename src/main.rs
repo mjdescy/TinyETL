@@ -1,6 +1,6 @@
 use clap::Parser;
 use tracing::{info, error};
-use tracing_subscriber;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use tinyetl::{
     cli::Cli,
@@ -15,13 +15,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let config: Config = cli.into();
 
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_max_level(match config.log_level {
-            tinyetl::config::LogLevel::Info => tracing::Level::INFO,
-            tinyetl::config::LogLevel::Warn => tracing::Level::WARN,
-            tinyetl::config::LogLevel::Error => tracing::Level::ERROR,
-        })
+    // Initialize logging with specific module filtering
+    let env_filter = EnvFilter::new(format!(
+        "sqlx=warn,tinyetl={}",
+        match config.log_level {
+            tinyetl::config::LogLevel::Info => "info",
+            tinyetl::config::LogLevel::Warn => "warn", 
+            tinyetl::config::LogLevel::Error => "error",
+        }
+    ));
+    
+    fmt()
+        .with_env_filter(env_filter)
         .init();
 
     // Create source and target connectors
