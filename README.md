@@ -6,7 +6,11 @@ A tiny ETL tool for moving data between sources with automatic schema inference 
 
 ## Overview
 
-TinyETL is designed to make data movement simple and efficient. Point it at a source and target, and it will automatically detect the schema, create necessary tables, and transfer your data in optimized batches.
+TinyETL is designed to make data movement simple and efficient. Point it at a source and target, and it will automatically detect the schema, create necessary tables, and trans### License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+For commercial SaaS or hosted product usage, please contact licensing@tinyetl.com for additional commercial licensing terms.ur data in optimized batches.
 
 ### Key Features
 
