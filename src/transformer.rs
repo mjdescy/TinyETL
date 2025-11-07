@@ -146,6 +146,7 @@ impl Transformer {
     }
 
     /// Transform a batch of rows and infer schema from the first transformed row
+    /// Filters out rows where the transform function returns nil
     pub fn transform_batch(&mut self, rows: &[Row]) -> Result<Vec<Row>> {
         if !self.is_enabled() {
             return Ok(rows.to_vec());
@@ -155,26 +156,30 @@ impl Transformer {
             return Ok(Vec::new());
         }
 
-        let mut transformed_rows = Vec::with_capacity(rows.len());
+        let mut transformed_rows = Vec::new();
+        let mut schema_inferred = false;
 
-        for (i, row) in rows.iter().enumerate() {
-            let transformed_row = self.transform_row(row)?;
-            
-            // Infer schema from the first transformed row
-            if i == 0 {
-                self.infer_schema_from_first_row(&transformed_row)?;
+        for row in rows.iter() {
+            if let Some(transformed_row) = self.transform_row(row)? {
+                // Infer schema from the first successfully transformed row
+                if !schema_inferred {
+                    self.infer_schema_from_first_row(&transformed_row)?;
+                    schema_inferred = true;
+                }
+
+                // Validate the transformed row against the inferred schema
+                let validated_row = self.validate_and_filter_row(transformed_row)?;
+                transformed_rows.push(validated_row);
             }
-
-            // Validate the transformed row against the inferred schema
-            let validated_row = self.validate_and_filter_row(transformed_row)?;
-            transformed_rows.push(validated_row);
+            // If transform_row returns None, the row is filtered out (skip it)
         }
 
         Ok(transformed_rows)
     }
 
     /// Transform a single row using the Lua function
-    fn transform_row(&self, row: &Row) -> Result<Row> {
+    /// Returns None if the row should be filtered out (when Lua returns nil)
+    fn transform_row(&self, row: &Row) -> Result<Option<Row>> {
         if !self.has_transform {
             return Err(TinyEtlError::Configuration("No transform function loaded".to_string()));
         }
@@ -187,11 +192,24 @@ impl Transformer {
         let lua_row = self.row_to_lua_table(row)?;
         
         // Call the transform function
-        let result: Table = transform_fn.call(lua_row)
+        let result: LuaValue = transform_fn.call(lua_row)
             .map_err(|e| TinyEtlError::Transform(format!("Lua transform function failed: {}", e)))?;
 
-        // Convert result back to Row
-        self.lua_table_to_row(result)
+        // Handle filtering: if Lua returns nil, filter out this row
+        match result {
+            LuaValue::Nil => Ok(None),
+            LuaValue::Table(table) => {
+                // Convert result back to Row
+                let row = self.lua_table_to_row(table)?;
+                // Also check if the table is empty (another way to filter)
+                if row.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(row))
+                }
+            }
+            _ => Err(TinyEtlError::Transform("Transform function must return a table or nil".to_string()))
+        }
     }
 
     /// Convert a Row to a Lua table

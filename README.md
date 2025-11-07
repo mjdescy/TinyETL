@@ -167,7 +167,8 @@ tinyetl data.csv output.db --transform-file transform.lua
 3. **Column Override**: Transformations can override existing columns with new values
 4. **New Columns**: New columns returned by transform are added to the target schema  
 5. **Column Filtering**: For Lua files, only columns returned by the transform function are kept
-6. **Type Safety**: Lua values are automatically converted to appropriate SQL types
+6. **Row Filtering**: Return `nil` or empty table `{}` from Lua functions to filter out rows
+7. **Type Safety**: Lua values are automatically converted to appropriate SQL types
 7. **Error Handling**: Transformation errors stop the process with clear error messages
 
 #### Available Data Types
@@ -185,6 +186,35 @@ tinyetl data.csv output.db --transform-file transform.lua
 - Logic: `and`, `or`, `not`, conditional expressions
 - Pattern matching with string methods
 
+#### Row Filtering (Lua Files Only)
+
+You can filter out rows by returning `nil` or an empty table `{}` from your transform function:
+
+```lua
+function transform(row)
+    -- Filter out rows with missing data
+    if not row.email or row.email == "" then
+        return nil  -- Remove this row
+    end
+    
+    -- Filter by conditions
+    if row.age and row.age < 18 then
+        return nil  -- Remove minors
+    end
+    
+    -- Filter out test data
+    if row.country ~= "United States" then
+        return nil  -- Keep only US records
+    end
+    
+    -- Transform and return the row
+    row.full_name = row.first_name .. ' ' .. row.last_name
+    return row
+end
+```
+
+**Note**: Inline expressions (`--transform`) always preserve all rows. Row filtering only works with Lua files (`--transform-file`).
+
 #### Examples
 
 ```bash
@@ -196,6 +226,9 @@ tinyetl products.csv categorized.db --transform "category=row.price < 50 and 'bu
 
 # Extract year from date and calculate age
 tinyetl people.csv processed.db --transform "birth_year=tonumber(row.birth_date:match('^(%d%d%d%d)')); age=2024 - birth_year"
+
+# Filter and transform with Lua file (removes invalid rows)
+tinyetl messy_data.csv clean_data.db --transform-file filter.lua
 
 # Preview transformations before applying
 tinyetl data.csv output.db --transform "total=row.qty * row.price" --preview 5
