@@ -657,4 +657,293 @@ end
         let transformer = Transformer::new(&config).unwrap();
         assert!(!transformer.is_enabled());
     }
+
+    #[test]
+    fn test_transform_row_no_function_loaded() {
+        // Create transformer with no transform function
+        let config = TransformConfig::None;
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let row = HashMap::new();
+        let result = transformer.transform_row(&row);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No transform function loaded"));
+    }
+
+    #[test] 
+    fn test_transform_function_returns_nil() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    -- Return nil to filter out the row
+    return nil
+end
+"#;
+        let temp_file = "/tmp/test_filter_nil.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test".to_string(), Value::String("value".to_string()));
+        
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 0); // Row should be filtered out
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_transform_function_returns_empty_table() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    -- Return empty table to filter out the row
+    return {}
+end
+"#;
+        let temp_file = "/tmp/test_filter_empty.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test".to_string(), Value::String("value".to_string()));
+        
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 0); // Row should be filtered out due to empty table
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_transform_function_returns_non_table() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    -- Return a string instead of table
+    return "invalid"
+end
+"#;
+        let temp_file = "/tmp/test_invalid_return.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test".to_string(), Value::String("value".to_string()));
+        
+        let result = transformer.transform_batch(&[row]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Transform function must return a table or nil"));
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_unsupported_lua_value_type() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    local result = {}
+    -- Return a function as a value (unsupported type)
+    result.func_value = function() return "test" end
+    result.thread_value = coroutine.create(function() end)
+    return result
+end
+"#;
+        let temp_file = "/tmp/test_unsupported_types.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let row = HashMap::new();
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        // Unsupported types should be converted to string representations
+        let transformed = &result[0];
+        assert!(transformed.contains_key("func_value"));
+        assert!(transformed.contains_key("thread_value"));
+        
+        // Values should be converted to strings with debug format
+        if let Some(Value::String(s)) = transformed.get("func_value") {
+            assert!(s.contains("Function"));
+        } else {
+            panic!("Expected string representation of function");
+        }
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_lua_table_creation_and_conversion() {
+        // Test the row_to_lua_table and lua_table_to_row conversion path
+        let config = TransformConfig::Inline("test=42".to_string());
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("test".to_string(), Value::String("value".to_string()));
+        row.insert("int_val".to_string(), Value::Integer(42));
+        row.insert("float_val".to_string(), Value::Float(3.14));
+        row.insert("bool_val".to_string(), Value::Boolean(true));
+        row.insert("null_val".to_string(), Value::Null);
+        
+        let lua_table = transformer.row_to_lua_table(&row).unwrap();
+        let converted_row = transformer.lua_table_to_row(lua_table).unwrap();
+        
+        // Verify all value types are handled correctly
+        assert_eq!(converted_row.get("test"), Some(&Value::String("value".to_string())));
+        assert_eq!(converted_row.get("int_val"), Some(&Value::Integer(42)));
+        assert_eq!(converted_row.get("float_val"), Some(&Value::Float(3.14)));
+        assert_eq!(converted_row.get("bool_val"), Some(&Value::Boolean(true)));
+        
+        // Note: In Lua, nil values don't create table entries, so null_val won't be preserved
+        // This is correct behavior - null values are effectively filtered out in Lua tables
+        assert_eq!(converted_row.get("null_val"), None);
+        assert_eq!(converted_row.len(), 4); // Should have 4 entries, not 5
+    }
+
+    #[test]
+    fn test_lua_explicit_nil_handling() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    local result = {}
+    result.keep_value = row.input
+    result.explicit_nil = nil  -- This won't be in the table
+    result.explicit_null = "NULL"  -- This will be a string
+    return result
+end
+"#;
+        let temp_file = "/tmp/test_nil_handling.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let mut row = HashMap::new();
+        row.insert("input".to_string(), Value::String("test".to_string()));
+        
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let transformed = &result[0];
+        assert_eq!(transformed.get("keep_value"), Some(&Value::String("test".to_string())));
+        assert_eq!(transformed.get("explicit_nil"), None); // nil values don't create entries
+        assert_eq!(transformed.get("explicit_null"), Some(&Value::String("NULL".to_string())));
+        assert_eq!(transformed.len(), 2); // Only 2 entries should exist
+        
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_schema_merge_without_inferred_schema() {
+        // Test the case where no transformations occurred and no inferred schema exists
+        let config = TransformConfig::None;
+        let transformer = Transformer::new(&config).unwrap();
+        
+        let base_schema = Schema {
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: DataType::Integer,
+                    nullable: false,
+                },
+                Column {
+                    name: "name".to_string(),
+                    data_type: DataType::String,
+                    nullable: true,
+                }
+            ],
+            estimated_rows: Some(1000),
+            primary_key_candidate: Some("id".to_string()),
+        };
+        
+        // Since no transformations were applied, should return base schema as-is
+        let merged = transformer.merge_with_base_schema(&base_schema).unwrap();
+        assert_eq!(merged.columns.len(), 2);
+        assert_eq!(merged.columns[0].name, "id");
+        assert_eq!(merged.columns[1].name, "name");
+        assert_eq!(merged.estimated_rows, Some(1000));
+        assert_eq!(merged.primary_key_candidate, Some("id".to_string()));
+    }
+
+    #[test]
+    fn test_schema_merge_with_inferred_schema() {
+        let config = TransformConfig::Inline("derived_col=row.value * 2; new_str='constant'".to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        // Process a row to infer schema
+        let mut row = HashMap::new();
+        row.insert("value".to_string(), Value::Integer(10));
+        transformer.transform_batch(&[row]).unwrap();
+        
+        let base_schema = Schema {
+            columns: vec![Column {
+                name: "value".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            }],
+            estimated_rows: Some(100),
+            primary_key_candidate: None,
+        };
+        
+        // Should return the inferred schema from transformations
+        let merged = transformer.merge_with_base_schema(&base_schema).unwrap();
+        let col_names: Vec<&String> = merged.columns.iter().map(|c| &c.name).collect();
+        assert!(col_names.contains(&&"derived_col".to_string()));
+        assert!(col_names.contains(&&"new_str".to_string()));
+    }
+
+    #[test]
+    fn test_lua_string_creation_all_value_types() {
+        use std::fs;
+        
+        let lua_content = r#"
+function transform(row)
+    local result = {}
+    -- Test string interpolation with date
+    if row.date_val then
+        result.formatted_date = "Date: " .. row.date_val
+    end
+    -- Copy all values
+    for k, v in pairs(row) do
+        result[k] = v
+    end
+    return result
+end
+"#;
+        let temp_file = "/tmp/test_string_creation.lua";
+        fs::write(temp_file, lua_content).unwrap();
+        
+        let config = TransformConfig::File(temp_file.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        
+        let date = chrono::Utc::now();
+        let mut row = HashMap::new();
+        row.insert("date_val".to_string(), Value::Date(date));
+        row.insert("str_val".to_string(), Value::String("test".to_string()));
+        row.insert("int_val".to_string(), Value::Integer(123));
+        
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let transformed = &result[0];
+        assert!(transformed.contains_key("formatted_date"));
+        assert!(transformed.contains_key("date_val"));
+        assert!(transformed.contains_key("str_val"));
+        assert!(transformed.contains_key("int_val"));
+        
+        let _ = fs::remove_file(temp_file);
+    }
 }
