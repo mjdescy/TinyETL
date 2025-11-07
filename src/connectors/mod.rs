@@ -47,6 +47,7 @@ pub trait Target: Send + Sync {
 }
 
 /// Factory function to create a source connector from a connection string
+/// For new protocol-based connections (snowflake://, etc.), use create_source_from_url instead
 pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
     if connection_string.ends_with(".csv") {
         Ok(Box::new(csv::CsvSource::new(connection_string)?))
@@ -67,6 +68,7 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
 }
 
 /// Factory function to create a target connector from a connection string
+/// For new protocol-based connections (snowflake://, etc.), use create_target_from_url instead
 pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
     if connection_string.ends_with(".csv") {
         Ok(Box::new(csv::CsvTarget::new(connection_string)?))
@@ -82,6 +84,31 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
         Err(crate::TinyEtlError::Configuration(
             format!("Unsupported target type: {}. Supported formats: file.csv, file.json, file.parquet, file.db, postgres://user:pass@host:port/db", connection_string)
         ))
+    }
+}
+
+/// New protocol-aware factory functions that handle modern connection strings
+/// Use these for new protocol support (snowflake://, onelake://, etc.)
+
+/// Create a source using the new protocol abstraction
+pub async fn create_source_from_url(connection_string: &str) -> Result<Box<dyn Source>> {
+    // Check if this looks like a protocol URL
+    if connection_string.contains("://") {
+        crate::protocols::create_source_from_url(connection_string).await
+    } else {
+        // Fallback to legacy connector system for backward compatibility
+        create_source(connection_string)
+    }
+}
+
+/// Create a target using the new protocol abstraction
+pub async fn create_target_from_url(connection_string: &str) -> Result<Box<dyn Target>> {
+    // Check if this looks like a protocol URL
+    if connection_string.contains("://") {
+        crate::protocols::create_target_from_url(connection_string).await
+    } else {
+        // Fallback to legacy connector system for backward compatibility
+        create_target(connection_string)
     }
 }
 

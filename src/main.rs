@@ -5,7 +5,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 use tinyetl::{
     cli::Cli,
     config::Config,
-    connectors::{create_source, create_target},
+    connectors::{create_source_from_url, create_target_from_url},
     transfer::TransferEngine,
 };
 
@@ -30,8 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Create source and target connectors
-    let source = create_source(&config.source)?;
-    let target = create_target(&config.target)?;
+    let source = create_source_from_url(&config.source).await?;
+    let target = create_target_from_url(&config.target).await?;
 
     // Execute the transfer
     match TransferEngine::execute(&config, source, target).await {
