@@ -1,5 +1,6 @@
 use clap::Parser;
 use crate::config::{Config, LogLevel};
+use crate::transformer::TransformConfig;
 
 #[derive(Parser)]
 #[command(name = "tinyetl")]
@@ -35,10 +36,29 @@ pub struct Cli {
     /// Skip rows already in target if primary key detected
     #[arg(long)]
     pub skip_existing: bool,
+
+    /// Path to Lua file containing a 'transform' function
+    #[arg(long, value_name = "FILE")]
+    pub transform_file: Option<String>,
+
+    /// Inline transformation expressions (semicolon-separated, e.g., "new_col=row.old_col * 2; name=row.first .. ' ' .. row.last")
+    #[arg(long, value_name = "EXPRESSIONS")]
+    pub transform: Option<String>,
 }
 
 impl From<Cli> for Config {
     fn from(cli: Cli) -> Self {
+        // Determine transformation config
+        let transform_config = match (&cli.transform_file, &cli.transform) {
+            (Some(file), None) => TransformConfig::File(file.clone()),
+            (None, Some(expressions)) => TransformConfig::Inline(expressions.clone()),
+            (Some(file), Some(_)) => {
+                eprintln!("Warning: Both --transform-file and --transform specified. Using --transform-file.");
+                TransformConfig::File(file.clone())
+            }
+            (None, None) => TransformConfig::None,
+        };
+
         Config {
             source: cli.source,
             target: cli.target,
@@ -48,6 +68,7 @@ impl From<Cli> for Config {
             dry_run: cli.dry_run,
             log_level: cli.log_level,
             skip_existing: cli.skip_existing,
+            transform: transform_config,
         }
     }
 }

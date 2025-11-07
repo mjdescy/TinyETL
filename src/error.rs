@@ -14,6 +14,12 @@ pub enum TinyEtlError {
     #[error("Configuration error: {0}")]
     Configuration(String),
     
+    #[error("Config error: {0}")]  // Alias for Configuration for backwards compatibility
+    Config(String),
+    
+    #[error("Transform error: {0}")]
+    Transform(String),
+    
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     
@@ -25,6 +31,9 @@ pub enum TinyEtlError {
     
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
+    
+    #[error("Lua error: {0}")]
+    Lua(#[from] mlua::Error),
     
     #[error("General error: {0}")]
     General(#[from] AnyhowError),

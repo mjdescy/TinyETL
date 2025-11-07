@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::transformer::TransformConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -10,6 +11,8 @@ pub struct Config {
     pub dry_run: bool,
     pub log_level: LogLevel,
     pub skip_existing: bool,
+    #[serde(skip)]  // Skip serialization as TransformConfig doesn't implement Serialize
+    pub transform: TransformConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +33,7 @@ impl Default for Config {
             dry_run: false,
             log_level: LogLevel::Info,
             skip_existing: false,
+            transform: TransformConfig::None,
         }
     }
 }

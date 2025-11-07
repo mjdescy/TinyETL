@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     connectors::{Source, Target},
     schema::Schema,
+    transformer::Transformer,
 };
 
 pub struct TransferEngine;
@@ -40,22 +41,46 @@ impl TransferEngine {
 
         // Step 3: Handle preview mode
         if let Some(preview_rows) = config.preview {
-            return Self::handle_preview(source, &schema, preview_rows).await;
+            return Self::handle_preview(source, &schema, preview_rows, config).await;
         }
 
         // Step 4: Handle dry run mode
         if config.dry_run {
-            return Self::handle_dry_run(source, target, &schema).await;
+            return Self::handle_dry_run(source, target, &schema, config).await;
         }
 
-        // Step 5: Extract table name from target
+        // Step 5: Initialize transformer and determine final schema
+        let mut transformer = Transformer::new(&config.transform)?;
+        let final_schema = if transformer.is_enabled() {
+            info!("→ Transformation enabled");
+            
+            // Read a small sample to infer the transformed schema
+            source.reset().await?;
+            let sample_batch = source.read_batch(1).await?;
+            
+            if !sample_batch.is_empty() {
+                let transformed_sample = transformer.transform_batch(&sample_batch)?;
+                if let Some(transform_schema) = transformer.get_inferred_schema() {
+                    info!("→ Schema updated by transformations: {} columns", transform_schema.columns.len());
+                    transform_schema.clone()
+                } else {
+                    schema.clone()
+                }
+            } else {
+                schema.clone()
+            }
+        } else {
+            schema.clone()
+        };
+
+        // Step 6: Extract table name from target
         let table_name = Self::extract_table_name(&config.target);
 
-        // Step 6: Create target table
+        // Step 7: Create target table with final schema
         info!("→ Creating target table: {}", table_name);
-        target.create_table(&table_name, &schema).await?;
+        target.create_table(&table_name, &final_schema).await?;
 
-        // Step 7: Transfer data
+        // Step 8: Transfer data
         let estimated_rows = source.estimated_row_count().await?.unwrap_or(0);
         info!("→ Copying {} rows", estimated_rows);
 
@@ -81,7 +106,14 @@ impl TransferEngine {
                 break;
             }
 
-            let written = target.write_batch(&batch).await?;
+            // Apply transformations
+            let processed_batch = if transformer.is_enabled() {
+                transformer.transform_batch(&batch)?
+            } else {
+                batch
+            };
+
+            let written = target.write_batch(&processed_batch).await?;
             total_rows += written;
             batches_processed += 1;
 
@@ -116,76 +148,34 @@ impl TransferEngine {
         mut source: Box<dyn Source>,
         schema: &Schema,
         preview_rows: usize,
+        config: &Config,
     ) -> Result<TransferStats> {
-        println!("\nSchema Preview:");
-        println!("┌─────────────────────┬───────────────┬──────────┐");
-        println!("│ Column              │ Type          │ Nullable │");
-        println!("├─────────────────────┼───────────────┼──────────┤");
+        // Initialize transformer for preview
+        let mut transformer = Transformer::new(&config.transform)?;
         
-        for column in &schema.columns {
-            println!("│ {:<19} │ {:<13} │ {:<8} │", 
-                column.name, column.data_type, column.nullable);
-        }
-        println!("└─────────────────────┴───────────────┴──────────┘");
+        println!("\nOriginal Schema Preview:");
+        Self::print_schema(schema);
 
-        println!("\nData Preview ({} rows):", preview_rows);
         source.reset().await?;
         let sample_data = source.read_batch(preview_rows).await?;
         
-        if !sample_data.is_empty() {
-            // Print column headers
-            let headers: Vec<&String> = sample_data[0].keys().collect();
+        let (final_schema, final_data) = if transformer.is_enabled() && !sample_data.is_empty() {
+            println!("\nApplying transformations...");
+            let transformed_data = transformer.transform_batch(&sample_data)?;
             
-            // Print top border
-            print!("┌");
-            for i in 0..headers.len() {
-                print!("─────────────────");
-                if i < headers.len() - 1 {
-                    print!("┬");
-                }
+            if let Some(transform_schema) = transformer.get_inferred_schema() {
+                println!("\nTransformed Schema Preview:");
+                Self::print_schema(transform_schema);
+                (transform_schema, transformed_data)
+            } else {
+                (schema, sample_data)
             }
-            println!("┐");
-            
-            // Print headers
-            print!("│");
-            for header in &headers {
-                print!(" {:<15} │", header);
-            }
-            println!();
-            
-            // Print separator
-            print!("├");
-            for i in 0..headers.len() {
-                print!("─────────────────");
-                if i < headers.len() - 1 {
-                    print!("┼");
-                }
-            }
-            println!("┤");
-            
-            // Print data rows
-            for row in &sample_data {
-                print!("│");
-                for header in &headers {
-                    let value_str = match row.get(*header) {
-                        Some(value) => format!("{:?}", value).chars().take(15).collect(),
-                        None => "NULL".to_string(),
-                    };
-                    print!(" {:<15} │", value_str);
-                }
-                println!();
-            }
-            
-            // Print bottom border
-            print!("└");
-            for i in 0..headers.len() {
-                print!("─────────────────");
-                if i < headers.len() - 1 {
-                    print!("┴");
-                }
-            }
-            println!("┘");
-        }
+        } else {
+            (schema, sample_data)
+        };
+
+        println!("\nData Preview ({} rows):", preview_rows);
+        Self::print_data_table(&final_data);
 
         Ok(TransferStats {
             total_rows: 0,
@@ -195,10 +185,83 @@ impl TransferEngine {
         })
     }
 
+    fn print_schema(schema: &Schema) {
+        println!("┌─────────────────────┬───────────────┬──────────┐");
+        println!("│ Column              │ Type          │ Nullable │");
+        println!("├─────────────────────┼───────────────┼──────────┤");
+        
+        for column in &schema.columns {
+            println!("│ {:<19} │ {:<13} │ {:<8} │", 
+                column.name, column.data_type, column.nullable);
+        }
+        println!("└─────────────────────┴───────────────┴──────────┘");
+    }
+
+    fn print_data_table(data: &[crate::schema::Row]) {
+        if data.is_empty() {
+            println!("No data to display");
+            return;
+        }
+
+        // Print column headers
+        let headers: Vec<&String> = data[0].keys().collect();
+        
+        // Print top border
+        print!("┌");
+        for i in 0..headers.len() {
+            print!("─────────────────");
+            if i < headers.len() - 1 {
+                print!("┬");
+            }
+        }
+        println!("┐");
+        
+        // Print headers
+        print!("│");
+        for header in &headers {
+            print!(" {:<15} │", header);
+        }
+        println!();
+        
+        // Print separator
+        print!("├");
+        for i in 0..headers.len() {
+            print!("─────────────────");
+            if i < headers.len() - 1 {
+                print!("┼");
+            }
+        }
+        println!("┤");
+        
+        // Print data rows
+        for row in data {
+            print!("│");
+            for header in &headers {
+                let value_str = match row.get(*header) {
+                    Some(value) => format!("{:?}", value).chars().take(15).collect(),
+                    None => "NULL".to_string(),
+                };
+                print!(" {:<15} │", value_str);
+            }
+            println!();
+        }
+        
+        // Print bottom border
+        print!("└");
+        for i in 0..headers.len() {
+            print!("─────────────────");
+            if i < headers.len() - 1 {
+                print!("┴");
+            }
+        }
+        println!("┘");
+    }
+
     async fn handle_dry_run(
-        source: Box<dyn Source>,
+        mut source: Box<dyn Source>,
         target: Box<dyn Target>,
         schema: &Schema,
+        config: &Config,
     ) -> Result<TransferStats> {
         info!("Dry run mode - validating connections and schema");
         
@@ -207,7 +270,24 @@ impl TransferEngine {
         info!("Schema inferred: {} columns", schema.columns.len());
         info!("Estimated rows: {}", estimated_rows);
         
-        let table_name = Self::extract_table_name("dummy");
+        // Test transformations if enabled
+        let mut transformer = Transformer::new(&config.transform)?;
+        if transformer.is_enabled() {
+            info!("Testing transformations...");
+            source.reset().await?;
+            let test_batch = source.read_batch(10).await?; // Small sample for testing
+            
+            if !test_batch.is_empty() {
+                let _transformed = transformer.transform_batch(&test_batch)?;
+                if let Some(transform_schema) = transformer.get_inferred_schema() {
+                    info!("Transformation successful: {} output columns", transform_schema.columns.len());
+                } else {
+                    info!("Transformation successful: schema unchanged");
+                }
+            }
+        }
+        
+        let table_name = Self::extract_table_name(&config.target);
         let table_exists = target.exists(&table_name).await?;
         
         if table_exists {
