@@ -14,6 +14,8 @@ pub struct SqliteSource {
     pool: Option<SqlitePool>,
     table_name: String,
     query: Option<String>,
+    current_offset: usize,
+    total_rows: Option<usize>,
 }
 
 impl SqliteSource {
@@ -38,6 +40,8 @@ impl SqliteSource {
             pool: None,
             table_name: table.to_string(),
             query: None,
+            current_offset: 0,
+            total_rows: None,
         })
     }
 }
@@ -101,6 +105,9 @@ impl Source for SqliteSource {
             .fetch_one(pool)
             .await?;
         let estimated_rows: i64 = count_result.get("count");
+        
+        // Store total rows for pagination
+        self.total_rows = Some(estimated_rows as usize);
 
         Ok(Schema {
             columns,
@@ -116,9 +123,15 @@ impl Source for SqliteSource {
 
         let pool = self.pool.as_ref().unwrap();
         
-        // Simple implementation - in practice we'd need proper pagination
-        let query = format!("SELECT * FROM \"{}\" LIMIT {}", self.table_name, batch_size);
+        // Use LIMIT and OFFSET for proper pagination
+        let query = format!(
+            "SELECT * FROM \"{}\" LIMIT {} OFFSET {}", 
+            self.table_name, batch_size, self.current_offset
+        );
         let rows = sqlx::query(&query).fetch_all(pool).await?;
+        
+        // Update offset for next batch
+        self.current_offset += rows.len();
         
         let mut result_rows = Vec::new();
         for row in rows {
@@ -170,14 +183,19 @@ impl Source for SqliteSource {
     }
 
     async fn reset(&mut self) -> Result<()> {
-        // For SQLite sources, reset means preparing for a new query
+        // Reset pagination state
+        self.current_offset = 0;
         self.query = None;
         Ok(())
     }
 
     fn has_more(&self) -> bool {
-        // Simplified - in practice we'd track pagination state
-        true
+        // Check if there are more rows to read based on pagination state
+        if let Some(total) = self.total_rows {
+            self.current_offset < total
+        } else {
+            false
+        }
     }
 }
 
