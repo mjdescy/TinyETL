@@ -16,6 +16,7 @@ pub struct CsvSource {
     reader: Option<csv::Reader<std::fs::File>>,
     headers: Vec<String>,
     current_position: u64,
+    has_more_data: bool,
 }
 
 impl CsvSource {
@@ -25,6 +26,7 @@ impl CsvSource {
             reader: None,
             headers: Vec::new(),
             current_position: 0,
+            has_more_data: true,
         })
     }
     
@@ -177,23 +179,30 @@ impl Source for CsvSource {
         let mut count = 0;
 
         if let Some(ref mut reader) = self.reader {
-            for result in reader.records() {
-                if count >= batch_size {
-                    break;
-                }
-
-                let record = result?;
-                let mut row = Row::new();
-                
-                for (i, field) in record.iter().enumerate() {
-                    if let Some(header) = self.headers.get(i) {
-                        let value = Self::parse_value(field);
-                        row.insert(header.clone(), value);
+            let mut records_iter = reader.records();
+            
+            while count < batch_size {
+                match records_iter.next() {
+                    Some(Ok(record)) => {
+                        let mut row = Row::new();
+                        
+                        for (i, field) in record.iter().enumerate() {
+                            if let Some(header) = self.headers.get(i) {
+                                let value = Self::parse_value(field);
+                                row.insert(header.clone(), value);
+                            }
+                        }
+                        
+                        rows.push(row);
+                        count += 1;
+                    }
+                    Some(Err(e)) => return Err(e.into()),
+                    None => {
+                        // No more records available
+                        self.has_more_data = false;
+                        break;
                     }
                 }
-                
-                rows.push(row);
-                count += 1;
             }
         }
 
@@ -214,12 +223,12 @@ impl Source for CsvSource {
             .has_headers(true)
             .from_reader(file));
         self.current_position = 0;
+        self.has_more_data = true;
         Ok(())
     }
 
     fn has_more(&self) -> bool {
-        // This is a simplified check - in practice we'd track position more carefully
-        self.reader.is_some()
+        self.has_more_data && self.reader.is_some()
     }
 }
 
