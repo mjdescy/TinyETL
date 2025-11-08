@@ -22,14 +22,20 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             name: tinyetl-macos-apple-silicon
-          # Linux build
+          # Linux builds
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: tinyetl-linux-x64
-          # Windows build
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: tinyetl-linux-arm64
+          # Windows builds
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: tinyetl-windows-x64
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: tinyetl-windows-arm64
 
     steps:
     - name: Checkout code
@@ -56,40 +62,33 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev liblua5.4-dev lua5.4
+        sudo apt-get install -y pkg-config libssl-dev
+        
+        # Install cross-compilation dependencies for ARM64
+        if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+        fi
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        # Install Lua 5.4 if not already present
-        brew install lua@5.4 || true
-        # Make sure pkg-config can find lua
-        if [[ $(uname -m) == 'arm64' ]]; then
-          export PKG_CONFIG_PATH="/opt/homebrew/opt/lua@5.4/lib/pkgconfig:$PKG_CONFIG_PATH"
-        else
-          export PKG_CONFIG_PATH="/usr/local/opt/lua@5.4/lib/pkgconfig:$PKG_CONFIG_PATH"
-        fi
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        # Only install OpenSSL dependencies if needed
+        brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
 
 
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        git clone https://github.com/Microsoft/vcpkg.git
-        .\vcpkg\bootstrap-vcpkg.bat
-        .\vcpkg\vcpkg.exe install lua:x64-windows
-
-        # Set env variables for this step
-        $env:VCPKG_ROOT="$PWD\vcpkg"
-        $env:CMAKE_TOOLCHAIN_FILE="$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
+        # No external dependencies needed with vendored mlua
+        echo "Using vendored Lua - no external dependencies required"
 
     - name: Build release binary
       id: build
       env:
-        # Help mlua find Lua on different platforms
-        PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH }}
-        VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
-        CMAKE_TOOLCHAIN_FILE: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+        # Cross-compilation settings for ARM64 Linux
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+        AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
       run: cargo build --release --target ${{ matrix.target }}
 
     - name: Check build success
