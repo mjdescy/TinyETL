@@ -18,7 +18,7 @@ For commercial SaaS or hosted product usage, please contact licensing@tinyetl.co
 
 - **Automatic Schema Inference**: Detects column names and data types automatically
 - **Data Transformations**: Transform data during transfer using Lua scripting
-- **Multiple Connectors**: Support for CSV, JSON, Parquet, AVRO SQLite, PostgreSQL, MySQL, HTTP, SSH (with more coming soon)
+- **Multiple Connectors**: Support for CSV, JSON, Parquet, AVRO, SQLite, PostgreSQL, MySQL, HTTP, SSH (with more coming soon)
 - **Batch Processing**: Efficient streaming with configurable batch sizes
 - **Progress Monitoring**: Real-time progress bars and transfer statistics
 - **Preview Mode**: Inspect data and schema without transferring
@@ -56,7 +56,7 @@ Options:
       --dry-run                  Validate source/target without transferring data
       --log-level <LOG_LEVEL>    Log level: info, warn, error [default: info]
       --skip-existing            Skip rows already in target if primary key detected
-      --source-type <TYPE>       Force source file type (csv, json, parquet) - useful for HTTP URLs
+      --source-type <TYPE>       Force source file type (csv, json, parquet, avro) - useful for HTTP URLs
       --transform-file <FILE>    Path to Lua file containing a 'transform' function
       --transform <EXPRESSIONS>  Inline transformation expressions (semicolon-separated)
   -h, --help                     Print help
@@ -69,7 +69,9 @@ Basic usage examples:
 # Local file operations
 tinyetl data.csv output.db
 tinyetl data.csv output.parquet
+tinyetl data.csv output.avro
 tinyetl data.json output.csv
+tinyetl data.avro output.json
 
 # Download from web
 tinyetl "https://example.com/data.csv" output.json
@@ -114,12 +116,15 @@ TinyETL supports two main categories of data sources and targets:
 - **CSV** - Comma-separated values
 - **JSON** - JavaScript Object Notation (array of objects)
 - **Parquet** - Columnar storage format
+- **Avro** - Binary serialization format with schema evolution
 
 **Access Protocols:**
 - **Local Files** - Direct file system access
   ```bash
   tinyetl data.csv output.json
+  tinyetl data.csv output.avro
   tinyetl /path/to/file.parquet data.csv
+  tinyetl data.avro output.json
   ```
 - **HTTP/HTTPS** - Download from web servers
   ```bash
@@ -422,6 +427,12 @@ tinyetl "mysql://user1:pass1@host1:3306/sourcedb#sales" "mysql://user2:pass2@hos
 
 # Convert CSV to Parquet format
 tinyetl data.csv output.parquet
+
+# Convert CSV to Avro format
+tinyetl data.csv output.avro
+
+# Load Avro file to PostgreSQL
+tinyetl data.avro "postgresql://user:pass@localhost/db#table"
 
 # Transfer between PostgreSQL databases
 tinyetl "postgresql://source_db/table" "postgresql://target_db/new_table"
