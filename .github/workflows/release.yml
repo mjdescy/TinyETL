@@ -22,13 +22,10 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             name: tinyetl-macos-apple-silicon
-          # Linux builds
+          # Linux build
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: tinyetl-linux-x64
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: tinyetl-linux-arm64
           # Windows builds
           - target: x86_64-pc-windows-msvc
             os: windows-latest
@@ -63,11 +60,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libssl-dev
-        
-        # Install cross-compilation dependencies for ARM64
-        if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-        fi
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
@@ -84,14 +76,6 @@ jobs:
 
     - name: Build release binary
       id: build
-      env:
-        # Cross-compilation settings for ARM64 Linux
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-        AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
-        # Use vendored OpenSSL for ARM64 cross-compilation
-        OPENSSL_STATIC: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '1' || '' }}
-        OPENSSL_NO_VENDOR: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '' || '1' }}
       run: cargo build --release --target ${{ matrix.target }}
 
     - name: Check build success
