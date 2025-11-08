@@ -4,6 +4,7 @@ pub mod sqlite;
 pub mod postgres;
 pub mod mysql;
 pub mod parquet;
+pub mod avro;
 
 use async_trait::async_trait;
 use crate::{Result, schema::{Schema, Row}};
@@ -56,6 +57,8 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(json::JsonSource::new(connection_string)?))
     } else if connection_string.ends_with(".parquet") {
         Ok(Box::new(parquet::ParquetSource::new(connection_string)?))
+    } else if connection_string.ends_with(".avro") {
+        Ok(Box::new(avro::AvroSource::new(connection_string)?))
     } else if (connection_string.contains(".db#") || connection_string.ends_with(".db"))
         || connection_string.starts_with("sqlite:") {
         Ok(Box::new(sqlite::SqliteSource::new(connection_string)?))
@@ -63,7 +66,7 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(postgres::PostgresSource::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.db#table, postgres://user:pass@host:port/db#table", connection_string)
+            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table", connection_string)
         ))
     }
 }
@@ -94,13 +97,15 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
         Ok(Box::new(json::JsonTarget::new(connection_string)?))
     } else if connection_string.ends_with(".parquet") {
         Ok(Box::new(parquet::ParquetTarget::new(connection_string)?))
+    } else if connection_string.ends_with(".avro") {
+        Ok(Box::new(avro::AvroTarget::new(connection_string)?))
     } else if connection_string.contains(".db#") || connection_string.ends_with(".db") || connection_string.starts_with("sqlite:") {
         // Legacy SQLite support: file.db, file.db#table, sqlite:file.db
         Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(format!(
             "Unsupported target type: {}. Supported formats: \
-            file.csv, file.json, file.parquet, file.db, file.db#table, \
+            file.csv, file.json, file.parquet, file.avro, file.db, file.db#table, \
             sqlite://path/file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table",
             connection_string
         )))

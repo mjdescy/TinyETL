@@ -18,7 +18,7 @@ For commercial SaaS or hosted product usage, please contact licensing@tinyetl.co
 
 - **Automatic Schema Inference**: Detects column names and data types automatically
 - **Data Transformations**: Transform data during transfer using Lua scripting
-- **Multiple Connectors**: Support for CSV, JSON, Parquet, SQLite, PostgreSQL, MySQL, http, ssh (with more coming soon)
+- **Multiple Connectors**: Support for CSV, JSON, Parquet, AVRO SQLite, PostgreSQL, MySQL, HTTP, SSH (with more coming soon)
 - **Batch Processing**: Efficient streaming with configurable batch sizes
 - **Progress Monitoring**: Real-time progress bars and transfer statistics
 - **Preview Mode**: Inspect data and schema without transferring
