@@ -105,7 +105,7 @@ tinyetl data.csv output.parquet
 tinyetl data.json analysis.db
 
 # Database to database 
-tinyetl "postgresql://user:pass@host/db#users" "mysql://user:pass@host/db#users"
+tinyetl "postgresql://user:@host/db#users" "mysql://user:@host/db#users"
 
 # Transform while transferring
 tinyetl sales.csv results.db --transform "profit=row.revenue - row.costs; margin=profit/revenue"
@@ -118,23 +118,34 @@ tinyetl "https://example.com/api/export" local_data.json --source-type=csv
 ```
 
 ## Usage
+<div style="overflow-x: auto;">
+
 ```
-tinyetl [OPTIONS] <SOURCE> <TARGET>
+Usage: tinyetl [OPTIONS] <SOURCE> <TARGET>
 
 Arguments:
-  <SOURCE>  Source: file path, URL, or database connection string
-  <TARGET>  Target: file path or database connection string
+  <SOURCE>  Source connection string (file path or connection string)
+  <TARGET>  Target connection string (file path or connection string)
 
-Key Options:
-      --batch-size <N>           Rows per batch [default: 10000]
-      --schema-file <file>       YAML schema file for validation
-      --transform "<expressions>" Inline Lua transformations  
-      --transform-file <file>    Lua transformation script
-      --preview <N>              Preview N rows without transferring
-      --dry-run                  Validate without transferring
-      --source-type <type>       Force source type: csv, json, parquet, avro
-  -h, --help                     Show all options
+Options:
+      --infer-schema             Auto-detect columns and types
+      --schema-file <FILE>       Path to schema file (YAML) to override auto-detection
+      --batch-size <BATCH_SIZE>  Number of rows per batch [default: 10000]
+      --preview <N>              Show first N rows and inferred schema without copying
+      --dry-run                  Validate source/target without transferring data
+      --log-level <LOG_LEVEL>    Log level: info, warn, error [default: info]
+      --skip-existing            Skip rows already in target if primary key detected
+      --truncate                 Truncate target before writing (overrides append-first behavior)
+      --transform-file <FILE>    Path to Lua file containing a 'transform' function
+      --transform <EXPRESSIONS>  Inline transformation expressions (semicolon-separated, e.g., "new_col=row.old_col * 2; name=row.first .. ' ' .. row.last")
+      --source-type <TYPE>       Force source file type (csv, json, parquet) - useful for HTTP URLs without clear extensions
+      --source-secret-id <ID>    Secret ID for source password (resolves to TINYETL_SECRET_{id})
+      --dest-secret-id <ID>      Secret ID for destination password (resolves to TINYETL_SECRET_{id})
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
+
+</div>
 
 Basic usage examples:
 
@@ -230,12 +241,12 @@ tinyetl "sqlite:///path/to/db.sqlite#table" output.csv
 tinyetl data.csv "sqlite:///output.db#customers"
 
 # PostgreSQL  
-tinyetl "postgresql://user:pass@localhost/mydb#orders" output.parquet
-tinyetl data.csv "postgresql://user:pass@localhost/mydb#customers"
+tinyetl "postgresql://user:@localhost/mydb#orders" output.parquet
+tinyetl data.csv "postgresql://user:@localhost/mydb#customers"
 
 # MySQL
-tinyetl "mysql://user:pass@localhost:3306/mydb#products" output.json
-tinyetl data.csv "mysql://user:pass@localhost:3306/mydb#sales"
+tinyetl "mysql://user:@localhost:3306/mydb#products" output.json
+tinyetl data.csv "mysql://user:@localhost:3306/mydb#sales"
 ```
 
 #### Source Type Override
@@ -268,8 +279,8 @@ TinyETL uses standard database connection URLs with an optional table specificat
 postgresql://username:password@hostname:port/database#table_name
 
 # Examples
-tinyetl data.csv "postgresql://user:pass@localhost/mydb#customers"
-tinyetl data.csv "postgresql://admin:secret@db.example.com:5432/analytics#sales_data"
+tinyetl data.csv "postgresql://user:@localhost/mydb#customers"
+tinyetl data.csv "postgresql://admin:@db.example.com:5432/analytics#sales_data"
 ```
 
 **MySQL:**
@@ -278,11 +289,11 @@ tinyetl data.csv "postgresql://admin:secret@db.example.com:5432/analytics#sales_
 mysql://username:password@hostname:port/database#table_name
 
 # Examples
-tinyetl data.csv "mysql://user:pass@localhost:3306/mydb#customers"
-tinyetl data.csv "mysql://admin:secret@db.example.com:3306/analytics#sales_data"
+tinyetl data.csv "mysql://user:@localhost:3306/mydb#customers"
+tinyetl data.csv "mysql://admin:@db.example.com:3306/analytics#sales_data"
 
 # Default table name is 'data' if not specified
-tinyetl data.csv "mysql://user:pass@localhost:3306/mydb"  # Creates table named 'data'
+tinyetl data.csv "mysql://user:@localhost:3306/mydb"  # Creates table named 'data'
 ```
 
 **SQLite:**
@@ -300,6 +311,51 @@ tinyetl data.csv "sqlite:///path/to/database.db#custom_table"
 - For MySQL, the database must exist before running TinyETL
 - Connection strings should be quoted to prevent shell interpretation
 - Default ports: PostgreSQL (5432), MySQL (3306)
+
+### Secure Password Management
+
+TinyETL provides secure methods for handling database passwords to avoid exposing sensitive credentials in command-line arguments or shell history.
+
+#### Environment Variables (Recommended)
+
+Instead of including passwords directly in connection strings, use environment variables and use the `--source-secret-id` and `--dest-secret-id` parameters:
+
+```bash
+# Set custom environment variables
+export TINYETL_SECRET_prod_db="production_password"
+export TINYETL_SECRET_dev_db="development_password"
+
+# Use explicit secret IDs
+tinyetl "postgres://user@prod.example.com/db#orders" \
+        "mysql://user@dev.example.com:3306/testdb#orders" \
+        --source-secret-id prod_db \
+        --dest-secret-id dev_db
+```
+
+**Environment Variable Pattern:**
+- Format: `TINYETL_SECRET_{protocol}_{type}` or `TINYETL_SECRET_{protocol}`
+- Examples:
+  - `TINYETL_SECRET_mysql_dest` - for MySQL destination connections
+  - `TINYETL_SECRET_postgres_source` - for PostgreSQL source connections  
+  - `TINYETL_SECRET_mysql` - generic MySQL password (works for both source/dest)
+
+
+#### Security Warnings
+
+TinyETL automatically detects when passwords are included in CLI parameters and warns you:
+
+```bash
+# This will show a security warning:
+tinyetl data.csv "mysql://user:password123@localhost/db#table"
+Warning: Using passwords in CLI parameters is insecure. Consider using --source-secret-id / --dest-secret-id.
+```
+
+**Security Best Practices:**
+- ✅ Use environment variables for passwords
+- ✅ Use explicit secret IDs for multiple environments
+- ✅ Keep connection strings in CI/CD without embedded passwords
+- ❌ Avoid putting passwords directly in connection strings
+- ❌ Avoid storing passwords in shell scripts or command history
 
 ### Data Transformations
 
@@ -448,6 +504,9 @@ tinyetl data.csv output.db --transform "total=row.qty * row.price" --preview 5
 | `--skip-existing` | Skip rows already in target if primary key detected | disabled |
 | `--transform-file <FILE>` | Path to Lua file containing a 'transform' function | - |
 | `--transform <EXPRESSIONS>` | Inline transformation expressions (semicolon-separated) | - |
+| `--source-type <TYPE>` | Force source file type: csv, json, parquet, avro | auto-detect |
+| `--source-secret-id <ID>` | Secret ID for source password (resolves to TINYETL_SECRET_{id}) | - |
+| `--dest-secret-id <ID>` | Secret ID for destination password (resolves to TINYETL_SECRET_{id}) | - |
 | `-h, --help` | Print help | - |
 | `-V, --version` | Print version | - |
 
@@ -475,6 +534,18 @@ tinyetl raw_sales.csv processed.db --transform "revenue=row.quantity * row.price
 # Complex data cleaning with Lua file
 # Complex data cleaning with Lua file
 tinyetl messy_data.csv clean.db --transform-file cleanup.lua --preview 3
+
+# Secure database transfers using environment variables
+export TINYETL_SECRET_mysql_dest="secure_password_123"
+tinyetl people.csv "mysql://testuser:@localhost:3306/testdb#people"
+
+# Multiple database transfer with explicit secret IDs
+export TINYETL_SECRET_prod_read="prod_password"
+export TINYETL_SECRET_staging_write="staging_password"
+tinyetl "postgres://user@prod.db.com/sales#orders" \
+        "mysql://user@staging.db.com:3306/analytics#orders" \
+        --source-secret-id prod_read \
+        --dest-secret-id staging_write
 ```
 
 ### Schema Validation
@@ -689,33 +760,6 @@ tinyetl "https://api.example.com/export" local_data.db
   --schema-file api_schema.yaml
 ```
 
-### Command Line Options
-
-# Load Parquet files to PostgreSQL
-tinyetl large_dataset.parquet "postgresql://user:pass@localhost/db#table"
-
-# Load CSV to MySQL
-tinyetl customers.csv "mysql://user:pass@localhost:3306/mydb#customers"
-
-# Transfer between MySQL databases
-tinyetl "mysql://user1:pass1@host1:3306/sourcedb#sales" "mysql://user2:pass2@host2:3306/targetdb#sales_backup"
-
-# Convert CSV to Parquet format
-tinyetl data.csv output.parquet
-
-# Convert CSV to Avro format
-tinyetl data.csv output.avro
-
-# Load Avro file to PostgreSQL
-tinyetl data.avro "postgresql://user:pass@localhost/db#table"
-
-# Transfer between PostgreSQL databases
-tinyetl "postgresql://source_db/table" "postgresql://target_db/new_table"
-
-# JSON to Parquet with transformations
-tinyetl raw_events.json analytics.parquet --transform "event_date=row.timestamp:match('^[^T]+'); user_id=tonumber(row.id)"
-```
-
 ### Sample Output
 
 ```
@@ -734,7 +778,7 @@ tinyetl raw_events.json analytics.parquet --transform "event_date=row.timestamp:
 
 - Handle datasets up to 5 million rows efficiently
 - Maintain low memory footprint through streaming
-- Achieve transfer speeds of 40k+ rows per second for typical datasets
+- Achieve transfer speeds of 180k+ rows per second for typical datasets
 - Cross-platform compatibility (Linux, macOS, Windows)
 
 ### Roadmap

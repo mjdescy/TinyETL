@@ -16,6 +16,8 @@ pub struct Config {
     #[serde(skip)]  // Skip serialization as TransformConfig doesn't implement Serialize
     pub transform: TransformConfig,
     pub source_type: Option<String>,
+    pub source_secret_id: Option<String>,
+    pub dest_secret_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -40,6 +42,8 @@ impl Default for Config {
             truncate: false,
             transform: TransformConfig::None,
             source_type: None,
+            source_secret_id: None,
+            dest_secret_id: None,
         }
     }
 }

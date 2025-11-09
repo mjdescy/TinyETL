@@ -56,6 +56,14 @@ pub struct Cli {
     /// Force source file type (csv, json, parquet) - useful for HTTP URLs without clear extensions
     #[arg(long, value_name = "TYPE")]
     pub source_type: Option<String>,
+
+    /// Secret ID for source password (resolves to TINYETL_SECRET_{id})
+    #[arg(long, value_name = "ID")]
+    pub source_secret_id: Option<String>,
+
+    /// Secret ID for destination password (resolves to TINYETL_SECRET_{id})
+    #[arg(long, value_name = "ID")]
+    pub dest_secret_id: Option<String>,
 }
 
 impl From<Cli> for Config {
@@ -84,6 +92,8 @@ impl From<Cli> for Config {
             truncate: cli.truncate,
             transform: transform_config,
             source_type: cli.source_type,
+            source_secret_id: cli.source_secret_id,
+            dest_secret_id: cli.dest_secret_id,
         }
     }
 }

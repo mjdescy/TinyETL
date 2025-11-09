@@ -6,6 +6,7 @@ use tinyetl::{
     cli::Cli,
     config::Config,
     connectors::{create_source_from_url_with_type, create_target_from_url},
+    secrets::process_connection_string,
     transfer::TransferEngine,
 };
 
@@ -29,9 +30,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(env_filter)
         .init();
 
+    // Process connection strings to resolve secrets
+    let processed_source = process_connection_string(
+        &config.source,
+        config.source_secret_id.as_ref(),
+        "source"
+    )?;
+    
+    let processed_target = process_connection_string(
+        &config.target,
+        config.dest_secret_id.as_ref(),
+        "destination"
+    )?;
+
     // Create source and target connectors
-    let source = create_source_from_url_with_type(&config.source, config.source_type.as_deref()).await?;
-    let target = create_target_from_url(&config.target).await?;
+    let source = create_source_from_url_with_type(&processed_source, config.source_type.as_deref()).await?;
+    let target = create_target_from_url(&processed_target).await?;
 
     // Execute the transfer
     match TransferEngine::execute(&config, source, target).await {

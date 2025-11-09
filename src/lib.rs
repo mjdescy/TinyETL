@@ -5,6 +5,7 @@ pub mod protocols;
 pub mod date_parser;
 pub mod error;
 pub mod schema;
+pub mod secrets;
 pub mod transfer;
 pub mod transformer;
 
