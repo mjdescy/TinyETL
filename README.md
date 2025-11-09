@@ -9,7 +9,7 @@
 
 ![TinyETL Demo](examples/tinyetl_preview2-normal-framerate.gif)
 
-Transform and move data between any format or database — **instantly**. No dependencies, no config files, just one command.
+Transform and move data between any format or database **instantly**. No dependencies, no config files, just one command.
 
 ```bash
 # MySQL → Parquet with inline transformation 
@@ -25,8 +25,8 @@ tinyetl "https://api.data.gov/export.json" analysis.parquet
 
 ## Why TinyETL?
 
-✅ **Single 21MB binary** — no dependencies, no installation headaches  
-✅ **40-145k+ rows/sec streaming** — handles massive datasets efficiently  
+✅ **Single 12.5MB binary** — no dependencies, no installation headaches  
+✅ **180k+ rows/sec streaming** — handles massive datasets efficiently  
 ✅ **Zero configuration** — automatic schema detection and table creation  
 ✅ **Lua transformations** — powerful data transformations  
 ✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite  
@@ -321,7 +321,7 @@ tinyetl data.csv output.db --transform "email=string.lower(row.email); age_group
 
 #### Using Lua Files
 
-For complex transformations, create a Lua file with a `transform` function. **Note**: With Lua files, you have full control over which columns to include - only columns explicitly returned are kept:
+For complex transformations, create a Lua file with a `transform` function. **Note**: With Lua files, you have full control over which columns to include. Only columns explicitly returned are kept:
 
 **transform.lua:**
 ```lua
