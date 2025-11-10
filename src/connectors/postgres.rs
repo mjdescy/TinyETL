@@ -337,7 +337,7 @@ impl Target for PostgresTarget {
         self.table_name = Some(actual_table_name.clone());
         self.schema = Some(schema.clone());
 
-        let mut create_sql = format!("CREATE TABLE IF NOT EXISTS {} (", actual_table_name);
+        let mut create_sql = format!("CREATE TABLE IF NOT EXISTS \"{}\" (", actual_table_name);
         
         let column_defs: Vec<String> = schema.columns.iter().map(|col| {
             let pg_type = match col.data_type {
@@ -350,7 +350,7 @@ impl Target for PostgresTarget {
             };
             
             let nullable = if col.nullable { "" } else { " NOT NULL" };
-            format!("{} {}{}", col.name, pg_type, nullable)
+            format!("\"{}\" {}{}", col.name, pg_type, nullable)
         }).collect();
         
         create_sql.push_str(&column_defs.join(", "));
@@ -378,44 +378,74 @@ impl Target for PostgresTarget {
             return Ok(0);
         }
 
-        // Build INSERT statement
-        let column_names: Vec<String> = schema.columns.iter().map(|c| c.name.clone()).collect();
-        let placeholders: Vec<String> = (1..=column_names.len()).map(|i| format!("${}", i)).collect();
+        // Build INSERT statement with quoted column names  
+        let column_names: Vec<String> = schema.columns.iter()
+            .map(|c| format!("\"{}\"", c.name))
+            .collect();
         
-        let insert_sql = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
-            table_name,
-            column_names.join(", "),
-            placeholders.join(", ")
-        );
-
-        let mut rows_written = 0;
+        let mut total_written = 0;
         
-        // Insert each row
-        for row in rows {
+        // Process in chunks to avoid parameter limit (PostgreSQL has 65535 parameter limit)
+        // With 12 columns, we can do ~5000 rows per batch, but start conservatively
+        let max_rows_per_batch = 65535 / schema.columns.len().max(1);
+        let chunk_size = max_rows_per_batch.min(1000); // Reduced from 5000 to 1000
+        
+        for chunk in rows.chunks(chunk_size) {
+            // Build VALUES placeholders for multiple rows: ($1, $2, $3), ($4, $5, $6), ...
+            let mut placeholders = Vec::with_capacity(chunk.len());
+            let mut param_count = 1;
+            
+            for _ in 0..chunk.len() {
+                let row_placeholders: Vec<String> = (0..schema.columns.len())
+                    .map(|_| {
+                        let p = format!("${}", param_count);
+                        param_count += 1;
+                        p
+                    })
+                    .collect();
+                placeholders.push(format!("({})", row_placeholders.join(", ")));
+            }
+            
+            let insert_sql = format!(
+                "INSERT INTO \"{}\" ({}) VALUES {}",
+                table_name,
+                column_names.join(", "),
+                placeholders.join(", ")
+            );
+            
+            // Build query and bind all values
             let mut query = sqlx::query(&insert_sql);
             
-            // Bind values in the same order as columns
-            for col in &schema.columns {
-                let value = row.get(&col.name).unwrap_or(&Value::Null);
-                query = match value {
-                    Value::String(s) => query.bind(s),
-                    Value::Integer(i) => query.bind(i),
-                    Value::Decimal(d) => query.bind(d.to_string()),
-                    Value::Boolean(b) => query.bind(b),
-                    Value::Date(d) => query.bind(d),
-                    Value::Null => query.bind::<Option<String>>(None),
-                };
+            for row in chunk {
+                for col in &schema.columns {
+                    let value = row.get(&col.name).unwrap_or(&Value::Null);
+                    query = match value {
+                        Value::Integer(i) => query.bind(i),
+                        Value::Decimal(d) => {
+                            // PostgreSQL is stricter - strip ALL null bytes
+                            let s: String = d.to_string().chars().filter(|&c| c != '\0').collect();
+                            query.bind(s)
+                        },
+                        Value::String(s) => {
+                            // PostgreSQL doesn't allow null bytes - filter them out completely
+                            let cleaned: String = s.chars().filter(|&c| c != '\0').collect();
+                            query.bind(cleaned)
+                        },
+                        Value::Boolean(b) => query.bind(b),
+                        Value::Date(d) => query.bind(d),
+                        Value::Null => query.bind(None::<String>),
+                    };
+                }
             }
             
             query.execute(pool)
                 .await
-                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert row: {}", e)))?;
+                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch: {}", e)))?;
                 
-            rows_written += 1;
+            total_written += chunk.len();
         }
 
-        Ok(rows_written)
+        Ok(total_written)
     }
 
     async fn finalize(&mut self) -> Result<()> {

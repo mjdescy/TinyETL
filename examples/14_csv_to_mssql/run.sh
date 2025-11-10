@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 
 echo "Running Example 14: CSV to MSSQL"
-echo "Input: customers.csv -> Output: mssql://testuser:testpass@localhost:1433/testdb#customers"
+echo "Input: customers.csv -> Output: mssql://SA:TestPass123!@localhost:1433/testdb#customers"
 
 # Check if Docker is running and MSSQL container exists
 if ! docker ps | grep -q "tinyetl-mssql"; then
@@ -15,8 +15,8 @@ if ! docker ps | grep -q "tinyetl-mssql"; then
     echo "Testing MSSQL protocol connection string parsing in dry-run mode..."
     
     # Run tinyetl command in dry-run mode
-    ../../target/release/tinyetl --dry-run customers.csv "mssql://testuser:testpass@localhost:1433/testdb#customers"
-    
+    ../../target/release/tinyetl --dry-run customers.csv "mssql://SA:TestPass123!@localhost:1433/testdb#customers"
+
     if [ $? -eq 0 ]; then
         echo "✅ PASS: MSSQL protocol connection string parsed successfully"
         echo "✅ PASS: Schema validation completed"
@@ -50,7 +50,7 @@ else
     
     # Run actual data transfer
     echo "Transferring data to MSSQL..."
-    ../../target/release/tinyetl customers.csv "mssql://testuser:testpass@localhost:1433/testdb#customers"
+    ../../target/release/tinyetl customers.csv "mssql://SA:TestPass123!@localhost:1433/testdb#customers"
     
     if [ $? -eq 0 ]; then
         echo "✅ PASS: Data transfer completed successfully"

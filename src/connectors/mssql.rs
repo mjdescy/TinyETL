@@ -6,6 +6,7 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 use futures_util::stream::TryStreamExt;
 use url::Url;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime};
 use uuid::Uuid;
 
@@ -317,14 +318,145 @@ impl MssqlTarget {
         }
     }
 
-    fn format_value_for_sql(value: &Value) -> String {
+    fn format_value_for_insert(value: &Value, expected_type: &DataType) -> String {
         match value {
             Value::Null => "NULL".to_string(),
-            Value::String(s) => format!("N'{}'", s.replace("'", "''")),
-            Value::Integer(i) => i.to_string(),
-            Value::Decimal(d) => d.to_string(),
-            Value::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
+            Value::String(s) => {
+                // Try to coerce string to expected type
+                match expected_type {
+                    DataType::Integer => {
+                        if let Ok(i) = s.parse::<i64>() {
+                            i.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    }
+                    DataType::Decimal => {
+                        if let Ok(d) = s.parse::<f64>() {
+                            d.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    }
+                    DataType::Boolean => {
+                        match s.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => "1".to_string(),
+                            "false" | "0" | "no" => "0".to_string(),
+                            _ => "NULL".to_string(),
+                        }
+                    }
+                    _ => format!("N'{}'", s.replace("'", "''")),
+                }
+            }
+            Value::Integer(i) => {
+                match expected_type {
+                    DataType::String => format!("N'{}'", i),
+                    _ => i.to_string(),
+                }
+            }
+            Value::Decimal(d) => {
+                match expected_type {
+                    DataType::String => {
+                        if let Some(f) = d.to_f64() {
+                            format!("N'{}'", f)
+                        } else {
+                            "NULL".to_string()
+                        }
+                    }
+                    _ => {
+                        if let Some(f) = d.to_f64() {
+                            f.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    }
+                }
+            }
+            Value::Boolean(b) => {
+                match expected_type {
+                    DataType::String => format!("N'{}'", if *b { "true" } else { "false" }),
+                    _ => if *b { "1" } else { "0" }.to_string(),
+                }
+            }
             Value::Date(dt) => format!("'{}'", dt.format("%Y-%m-%d %H:%M:%S%.3f")),
+        }
+    }
+
+    // Write value directly to a string buffer for better performance
+    fn write_value_to_buffer(buffer: &mut String, value: &Value, expected_type: &DataType) {
+        match value {
+            Value::Null => buffer.push_str("NULL"),
+            Value::String(s) => {
+                match expected_type {
+                    DataType::Integer => {
+                        if let Ok(i) = s.parse::<i64>() {
+                            buffer.push_str(&i.to_string());
+                        } else {
+                            buffer.push_str("NULL");
+                        }
+                    }
+                    DataType::Decimal => {
+                        if let Ok(d) = s.parse::<f64>() {
+                            buffer.push_str(&d.to_string());
+                        } else {
+                            buffer.push_str("NULL");
+                        }
+                    }
+                    DataType::Boolean => {
+                        buffer.push_str(match s.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => "1",
+                            "false" | "0" | "no" => "0",
+                            _ => "NULL",
+                        });
+                    }
+                    _ => {
+                        buffer.push_str("N'");
+                        // Escape single quotes
+                        for ch in s.chars() {
+                            if ch == '\'' {
+                                buffer.push_str("''");
+                            } else {
+                                buffer.push(ch);
+                            }
+                        }
+                        buffer.push('\'');
+                    }
+                }
+            }
+            Value::Integer(i) => {
+                if matches!(expected_type, DataType::String) {
+                    buffer.push_str("N'");
+                    buffer.push_str(&i.to_string());
+                    buffer.push('\'');
+                } else {
+                    buffer.push_str(&i.to_string());
+                }
+            }
+            Value::Decimal(d) => {
+                if let Some(f) = d.to_f64() {
+                    if matches!(expected_type, DataType::String) {
+                        buffer.push_str("N'");
+                        buffer.push_str(&f.to_string());
+                        buffer.push('\'');
+                    } else {
+                        buffer.push_str(&f.to_string());
+                    }
+                } else {
+                    buffer.push_str("NULL");
+                }
+            }
+            Value::Boolean(b) => {
+                if matches!(expected_type, DataType::String) {
+                    buffer.push_str(if *b { "N'true'" } else { "N'false'" });
+                } else {
+                    buffer.push(if *b { '1' } else { '0' });
+                }
+            }
+            Value::Date(dt) => {
+                buffer.push('\'');
+                buffer.push_str(&dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+                buffer.push('\'');
+            }
         }
     }
 }
@@ -345,7 +477,7 @@ impl Target for MssqlTarget {
         let client = self.client.as_mut().unwrap();
         self.schema = Some(schema.clone());
 
-        // Build CREATE TABLE statement
+        // Build CREATE TABLE statement with IF NOT EXISTS logic
         let mut columns_sql = Vec::new();
         for column in &schema.columns {
             let sql_type = Self::sql_type_from_data_type(&column.data_type);
@@ -353,8 +485,11 @@ impl Target for MssqlTarget {
             columns_sql.push(format!("[{}] {} {}", column.name, sql_type, nullable));
         }
 
+        // SQL Server doesn't have CREATE TABLE IF NOT EXISTS, so we use IF NOT EXISTS wrapper
         let create_table_sql = format!(
-            "CREATE TABLE [{}] ({})",
+            "IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{}') \
+             BEGIN CREATE TABLE [{}] ({}) END",
+            table_name.replace("'", "''"), // Escape single quotes
             table_name,
             columns_sql.join(", ")
         );
@@ -384,12 +519,25 @@ impl Target for MssqlTarget {
             .map(|c| format!("[{}]", c.name))
             .collect();
 
-        // Process rows in chunks
         let mut total_written = 0;
-        for chunk in rows.chunks(self.max_batch_size) {
-            let mut values_sql = Vec::new();
+        
+        // Process rows in larger chunks for better performance
+        // SQL Server can handle 1000 rows per INSERT statement efficiently
+        let chunk_size = self.max_batch_size.min(1000);
+        
+        for chunk in rows.chunks(chunk_size) {
+            // Build the INSERT statement directly to avoid intermediate allocations
+            // Estimate size: table name + columns + (~100 bytes per row avg)
+            let estimated_size = 200 + column_names.len() * 25 + chunk.len() * 150;
+            let mut insert_sql = String::with_capacity(estimated_size);
             
-            for row in chunk {
+            insert_sql.push_str("INSERT INTO [");
+            insert_sql.push_str(&self.table_name);
+            insert_sql.push_str("] (");
+            insert_sql.push_str(&column_names.join(", "));
+            insert_sql.push_str(") VALUES ");
+            
+            for (row_idx, row) in chunk.iter().enumerate() {
                 if row.len() != schema.columns.len() {
                     return Err(TinyEtlError::DataTransfer(format!(
                         "Row has {} values but schema expects {}",
@@ -398,24 +546,25 @@ impl Target for MssqlTarget {
                     )));
                 }
 
-                let row_values: Vec<String> = schema.columns.iter()
-                    .map(|col| {
-                        let value = row.get(&col.name).unwrap_or(&Value::Null);
-                        Self::format_value_for_sql(value)
-                    })
-                    .collect();
-                values_sql.push(format!("({})", row_values.join(", ")));
+                if row_idx > 0 {
+                    insert_sql.push_str(", ");
+                }
+                insert_sql.push('(');
+                
+                // Write VALUES clause directly into the string buffer for maximum performance
+                for (col_idx, col) in schema.columns.iter().enumerate() {
+                    if col_idx > 0 {
+                        insert_sql.push_str(", ");
+                    }
+                    
+                    let value = row.get(&col.name).unwrap_or(&Value::Null);
+                    Self::write_value_to_buffer(&mut insert_sql, value, &col.data_type);
+                }
+                
+                insert_sql.push(')');
             }
 
-            let insert_sql = format!(
-                "INSERT INTO [{}] ({}) VALUES {}",
-                self.table_name,
-                column_names.join(", "),
-                values_sql.join(", ")
-            );
-
-            client.execute(&insert_sql, &[])
-                .await
+            client.execute(&insert_sql, &[]).await
                 .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch: {}", e)))?;
 
             total_written += chunk.len();

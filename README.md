@@ -13,7 +13,7 @@ Transform and move data between any format or database **instantly**. No depende
 
 ```bash
 # MySQL → Parquet with inline transformation 
-tinyetl "mysql://user:pass@host/db#orders" orders.parquet \
+tinyetl "mysql://user:@host/db#orders" orders.parquet \
   --transform "total_usd=row.amount * row.exchange_rate"
 
 # Stream 100k+ rows/sec from CSV → SQLite
