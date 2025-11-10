@@ -27,9 +27,11 @@ tinyetl "https://api.data.gov/export.json" analysis.parquet
 
 ✅ **Single 12.5MB binary** — no dependencies, no installation headaches  
 ✅ **180k+ rows/sec streaming** — handles massive datasets efficiently  
-✅ **Zero configuration** — automatic schema detection and table creation  
+✅ **Zero configuration** — automatic schema detection and table creation (override with schema and config files in yaml) 
+
 ✅ **Lua transformations** — powerful data transformations  
 ✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite, native MSSQL (currently slow). Coming soon: ODBC, Snowflake, Databricks, OneLake
+
 ✅ **Cross-platform** — Linux, macOS, Windows ready
 
 ## Quick Install
