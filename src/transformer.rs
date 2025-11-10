@@ -16,6 +16,8 @@ pub enum TransformConfig {
     File(String),
     /// Semicolon-separated inline expressions like "col1=row.old_col * 2; col2=row.name .. '_suffix'"
     Inline(String),
+    /// Multi-line Lua script with individual assignments (for YAML configs)
+    Script(String),
     /// No transformation
     None,
 }
@@ -50,6 +52,9 @@ impl Transformer {
             }
             TransformConfig::Inline(expressions) => {
                 transformer.load_from_expressions(expressions)?;
+            }
+            TransformConfig::Script(script) => {
+                transformer.load_from_script(script)?;
             }
             TransformConfig::None => {
                 // No transformation needed
@@ -98,6 +103,23 @@ impl Transformer {
         Ok(())
     }
 
+    /// Load transformation from a multi-line script (for YAML configs)
+    fn load_from_script(&mut self, script: &str) -> Result<()> {
+        let lua_code = self.build_script_function(script)?;
+        
+        self.lua.load(&lua_code).exec()
+            .map_err(|e| TinyEtlError::Configuration(format!("Failed to execute script: {}", e)))?;
+
+        let globals = self.lua.globals();
+        let _transform_fn: Function = globals.get("transform")
+            .map_err(|_| TinyEtlError::Configuration("Failed to create transform function from script".to_string()))?;
+
+        self.has_transform = true;
+        
+        debug!("Created transform function from script: {}", script);
+        Ok(())
+    }
+
     /// Build a Lua transform function from semicolon-separated expressions
     fn build_transform_function(&self, expressions: &str) -> Result<String> {
         let assignments: Vec<&str> = expressions
@@ -139,6 +161,55 @@ impl Transformer {
         lua_code.push_str("end\n");
 
         debug!("Generated Lua code:\n{}", lua_code);
+        Ok(lua_code)
+    }
+
+    /// Build a Lua transform function from multi-line script assignments
+    fn build_script_function(&self, script: &str) -> Result<String> {
+        let lines: Vec<&str> = script
+            .lines()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty() && !s.starts_with("--")) // Skip empty lines and comments
+            .collect();
+
+        if lines.is_empty() {
+            return Err(TinyEtlError::Configuration("No valid assignments provided in script".to_string()));
+        }
+
+        let mut lua_code = String::new();
+        lua_code.push_str("function transform(row)\n");
+        lua_code.push_str("  local result = {}\n");
+        lua_code.push_str("  -- Copy all existing columns first\n");
+        lua_code.push_str("  for k, v in pairs(row) do\n");
+        lua_code.push_str("    result[k] = v\n");
+        lua_code.push_str("  end\n");
+        lua_code.push_str("  -- Apply transformations from script\n");
+
+        // Process each line as either a local variable or result assignment
+        for line in lines {
+            if let Some(equals_pos) = line.find('=') {
+                let col_name = line[..equals_pos].trim();
+                let expression = line[equals_pos + 1..].trim();
+                
+                // Validate variable/column name
+                if col_name.is_empty() || !col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    return Err(TinyEtlError::Configuration(format!("Invalid variable/column name: {}", col_name)));
+                }
+
+                // Check if this should be a local variable or result column
+                // Local variables are those used in subsequent expressions but not meant as output
+                // For now, we'll treat everything as a local variable first, then add to result
+                lua_code.push_str(&format!("  local {} = {}\n", col_name, expression));
+                lua_code.push_str(&format!("  result['{}'] = {}\n", col_name, col_name));
+            } else {
+                return Err(TinyEtlError::Configuration(format!("Invalid line format (missing '='): {}", line)));
+            }
+        }
+
+        lua_code.push_str("  return result\n");
+        lua_code.push_str("end\n");
+
+        debug!("Generated Lua code from script:\n{}", lua_code);
         Ok(lua_code)
     }
 
@@ -378,6 +449,38 @@ mod tests {
         assert_eq!(transformed.get("first_name"), Some(&Value::String("John".to_string())));
         assert_eq!(transformed.get("last_name"), Some(&Value::String("Doe".to_string())));
         assert_eq!(transformed.get("age"), Some(&Value::Integer(30)));
+    }
+
+    #[test]
+    fn test_script_transform() {
+        let script = r#"
+full_name = row.first_name .. " " .. row.last_name
+annual_salary = row.monthly_salary * 12
+hire_year = tonumber(string.sub(row.hire_date, 1, 4))
+current_year = 2024
+years_service = current_year - hire_year
+"#;
+        let config = TransformConfig::Script(script.to_string());
+        let mut transformer = Transformer::new(&config).unwrap();
+        assert!(transformer.is_enabled());
+
+        let mut row = HashMap::new();
+        row.insert("first_name".to_string(), Value::String("John".to_string()));
+        row.insert("last_name".to_string(), Value::String("Doe".to_string()));
+        row.insert("monthly_salary".to_string(), Value::Decimal(rust_decimal::Decimal::new(5000, 0)));
+        row.insert("hire_date".to_string(), Value::String("2020-01-15".to_string()));
+
+        let result = transformer.transform_batch(&[row]).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let transformed = &result[0];
+        // Check new columns
+        assert_eq!(transformed.get("full_name"), Some(&Value::String("John Doe".to_string())));
+        assert_eq!(transformed.get("annual_salary"), Some(&Value::Decimal(rust_decimal::Decimal::new(60000, 0))));
+        assert_eq!(transformed.get("years_service"), Some(&Value::Integer(4)));
+        // Check original columns are preserved
+        assert_eq!(transformed.get("first_name"), Some(&Value::String("John".to_string())));
+        assert_eq!(transformed.get("monthly_salary"), Some(&Value::Decimal(rust_decimal::Decimal::new(5000, 0))));
     }
 
     #[test]

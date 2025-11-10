@@ -1,0 +1,11 @@
+id,first_name,last_name,department,monthly_salary,hire_date,active
+1,John,Doe,Engineering,8500.00,2020-03-15,true
+2,Jane,Smith,Marketing,7200.00,2019-08-22,true
+3,Bob,Johnson,Sales,6800.00,2021-01-10,true
+4,Alice,Williams,Engineering,9200.00,2018-11-05,true
+5,Charlie,Brown,HR,5900.00,2022-06-18,false
+6,Diana,Davis,Finance,7800.00,2019-12-03,true
+7,Eve,Wilson,Engineering,8800.00,2020-09-14,true
+8,Frank,Miller,Sales,7100.00,2021-04-27,true
+9,Grace,Taylor,Marketing,6500.00,2022-02-08,true
+10,Henry,Anderson,IT,8200.00,2020-07-19,true

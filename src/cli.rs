@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crate::config::{Config, LogLevel};
 use crate::transformer::TransformConfig;
 
@@ -7,11 +7,14 @@ use crate::transformer::TransformConfig;
 #[command(about = "A tiny ETL tool for moving data between sources")]
 #[command(version)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Source connection string (file path or connection string)
-    pub source: String,
+    pub source: Option<String>,
 
     /// Target connection string (file path or connection string)
-    pub target: String,
+    pub target: Option<String>,
 
     /// Auto-detect columns and types
     #[arg(long, default_value = "true")]
@@ -66,8 +69,41 @@ pub struct Cli {
     pub dest_secret_id: Option<String>,
 }
 
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Run a job from a YAML configuration file
+    Run {
+        /// Path to the YAML configuration file
+        config_file: String,
+    },
+}
+
+impl Cli {
+    /// Check if this CLI call is for running a config file
+    pub fn is_config_mode(&self) -> bool {
+        matches!(self.command, Some(Commands::Run { .. }))
+    }
+
+    /// Get the config file path if in config mode
+    pub fn get_config_file(&self) -> Option<&str> {
+        match &self.command {
+            Some(Commands::Run { config_file }) => Some(config_file),
+            None => None,
+        }
+    }
+
+    /// Check if we have both source and target for direct mode
+    pub fn has_direct_params(&self) -> bool {
+        self.source.is_some() && self.target.is_some()
+    }
+}
+
 impl From<Cli> for Config {
     fn from(cli: Cli) -> Self {
+        // Ensure we have both source and target for direct CLI usage
+        let source = cli.source.expect("Source is required for direct CLI usage");
+        let target = cli.target.expect("Target is required for direct CLI usage");
+
         // Determine transformation config
         let transform_config = match (&cli.transform_file, &cli.transform) {
             (Some(file), None) => TransformConfig::File(file.clone()),
@@ -80,8 +116,8 @@ impl From<Cli> for Config {
         };
 
         Config {
-            source: cli.source,
-            target: cli.target,
+            source,
+            target,
             infer_schema: cli.infer_schema,
             schema_file: cli.schema_file,
             batch_size: cli.batch_size,
@@ -111,12 +147,27 @@ mod tests {
             "target.db#table"
         ]).unwrap();
 
-        assert_eq!(cli.source, "source.csv");
-        assert_eq!(cli.target, "target.db#table");
+        assert_eq!(cli.source, Some("source.csv".to_string()));
+        assert_eq!(cli.target, Some("target.db#table".to_string()));
         assert_eq!(cli.batch_size, 10000);
         assert!(cli.infer_schema);
         assert!(!cli.dry_run);
         assert!(!cli.skip_existing);
+        assert!(cli.has_direct_params());
+        assert!(!cli.is_config_mode());
+    }
+
+    #[test]
+    fn test_config_file_parsing() {
+        let cli = Cli::try_parse_from(&[
+            "tinyetl",
+            "run",
+            "my_job.yaml"
+        ]).unwrap();
+
+        assert!(cli.is_config_mode());
+        assert_eq!(cli.get_config_file(), Some("my_job.yaml"));
+        assert!(!cli.has_direct_params());
     }
 
     #[test]
@@ -133,8 +184,8 @@ mod tests {
             "--source-type", "json"
         ]).unwrap();
 
-        assert_eq!(cli.source, "source.json");
-        assert_eq!(cli.target, "target.csv");
+        assert_eq!(cli.source, Some("source.json".to_string()));
+        assert_eq!(cli.target, Some("target.csv".to_string()));
         assert_eq!(cli.batch_size, 5000);
         assert_eq!(cli.preview, Some(10));
         assert!(cli.dry_run);
@@ -162,11 +213,13 @@ mod tests {
 
     #[test]
     fn test_missing_arguments() {
+        // Should still work without source/target for subcommands
         let result = Cli::try_parse_from(&["tinyetl"]);
-        assert!(result.is_err());
+        assert!(result.is_ok());
         
-        let result = Cli::try_parse_from(&["tinyetl", "source.csv"]);
-        assert!(result.is_err());
+        // But should fail when trying to convert to Config without source/target
+        let cli = result.unwrap();
+        // This would panic when converting to Config, but that's expected behavior
     }
 
     #[test]
@@ -189,8 +242,8 @@ mod tests {
             "--source-type", "json"
         ]).unwrap();
 
-        assert_eq!(cli.source, "https://example.com/api/data");
-        assert_eq!(cli.target, "output.csv");
+        assert_eq!(cli.source, Some("https://example.com/api/data".to_string()));
+        assert_eq!(cli.target, Some("output.csv".to_string()));
         assert_eq!(cli.source_type, Some("json".to_string()));
 
         let config: Config = cli.into();

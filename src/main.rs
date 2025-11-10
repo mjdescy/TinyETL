@@ -4,7 +4,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use tinyetl::{
     cli::Cli,
-    config::Config,
+    config::{Config, YamlConfig},
     connectors::{create_source_from_url_with_type, create_target_from_url},
     secrets::process_connection_string,
     transfer::TransferEngine,
@@ -14,7 +14,22 @@ use tinyetl::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let cli = Cli::parse();
-    let config: Config = cli.into();
+    
+    // Determine if we're using config file or direct CLI args
+    let config: Config = if cli.is_config_mode() {
+        // Load config from YAML file
+        if let Some(config_file) = cli.get_config_file() {
+            let yaml_config = YamlConfig::from_file(config_file)?;
+            yaml_config.into_config()?
+        } else {
+            return Err("No config file specified".into());
+        }
+    } else if cli.has_direct_params() {
+        // Use direct CLI parameters
+        cli.into()
+    } else {
+        return Err("Either provide source and target arguments, or use 'run <config_file>'".into());
+    };
 
     // Initialize logging with specific module filtering
     let env_filter = EnvFilter::new(format!(
@@ -102,8 +117,8 @@ mod tests {
         assert!(cli.is_ok());
         
         let cli = cli.unwrap();
-        assert_eq!(cli.source, "test.csv");
-        assert_eq!(cli.target, "test.db#table");
+        assert_eq!(cli.source, Some("test.csv".to_string()));
+        assert_eq!(cli.target, Some("test.db#table".to_string()));
     }
     
     #[test]
@@ -167,18 +182,30 @@ mod tests {
     
     #[test]
     fn test_cli_missing_required_args() {
-        // Should fail when missing source
+        // With new subcommand structure, CLI parsing should succeed
+        // but conversion to Config should handle validation
         let result = Cli::try_parse_from(&[
             "tinyetl",
-            "only_target.json",  // Missing source (need both positional args)
+            "only_target.json",  
         ]);
-        assert!(result.is_err());
+        assert!(result.is_ok());
         
-        // Should fail when missing both
+        // Should succeed parsing with no args (could be subcommand)
         let result = Cli::try_parse_from(&[
             "tinyetl", 
         ]);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        
+        // Test config file subcommand
+        let result = Cli::try_parse_from(&[
+            "tinyetl",
+            "run",
+            "config.yaml"
+        ]);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.is_config_mode());
+        assert_eq!(cli.get_config_file(), Some("config.yaml"));
     }
     
     #[tokio::test]

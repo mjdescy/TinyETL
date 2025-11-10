@@ -1,0 +1,11 @@
+hire_year,department,active,annual_salary,last_name,hire_date,id,years_service,first_name,current_year,full_name,monthly_salary
+2020,Engineering,true,102000,Doe,2020-03-15T00:00:00+00:00,55555,4,John,2024,John Doe,8500
+2019,Marketing,true,86400,Smith,2019-08-22T00:00:00+00:00,55555,5,Jane,2024,Jane Smith,7200
+2021,Sales,true,81600,Johnson,2021-01-10T00:00:00+00:00,55555,3,Bob,2024,Bob Johnson,6800
+2018,Engineering,true,110400,Williams,2018-11-05T00:00:00+00:00,55555,6,Alice,2024,Alice Williams,9200
+2022,HR,false,70800,Brown,2022-06-18T00:00:00+00:00,55555,2,Charlie,2024,Charlie Brown,5900
+2019,Finance,true,93600,Davis,2019-12-03T00:00:00+00:00,55555,5,Diana,2024,Diana Davis,7800
+2020,Engineering,true,105600,Wilson,2020-09-14T00:00:00+00:00,55555,4,Eve,2024,Eve Wilson,8800
+2021,Sales,true,85200,Miller,2021-04-27T00:00:00+00:00,55555,3,Frank,2024,Frank Miller,7100
+2022,Marketing,true,78000,Taylor,2022-02-08T00:00:00+00:00,55555,2,Grace,2024,Grace Taylor,6500
+2020,IT,true,98400,Anderson,2020-07-19T00:00:00+00:00,55555,4,Henry,2024,Henry Anderson,8200

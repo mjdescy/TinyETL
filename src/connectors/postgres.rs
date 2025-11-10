@@ -337,7 +337,7 @@ impl Target for PostgresTarget {
         self.table_name = Some(actual_table_name.clone());
         self.schema = Some(schema.clone());
 
-        let mut create_sql = format!("CREATE TABLE {} (", actual_table_name);
+        let mut create_sql = format!("CREATE TABLE IF NOT EXISTS {} (", actual_table_name);
         
         let column_defs: Vec<String> = schema.columns.iter().map(|col| {
             let pg_type = match col.data_type {

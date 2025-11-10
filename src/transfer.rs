@@ -89,13 +89,18 @@ impl TransferEngine {
             if config.truncate {
                 info!("→ Truncating existing target: {}", table_name);
                 target.truncate(&table_name).await?;
+                // After truncating, we need to create the table again
+                target.create_table(&table_name, &final_schema).await?;
             } else if target.supports_append() {
                 info!("→ Appending to existing target: {}", table_name);
-                // Target exists and supports append - no need to create table
+                // For append mode, we still need to set the schema for the target
+                target.create_table(&table_name, &final_schema).await?;
             } else {
                 // Target exists but doesn't support append - must truncate
                 info!("→ Target exists but doesn't support append, truncating: {}", table_name);
                 target.truncate(&table_name).await?;
+                // After truncating, we need to create the table again
+                target.create_table(&table_name, &final_schema).await?;
             }
         } else {
             // Step 8: Create target table with final schema if it doesn't exist
