@@ -3,6 +3,7 @@ pub mod json;
 pub mod sqlite;
 pub mod postgres;
 pub mod mysql;
+pub mod mssql;
 pub mod parquet;
 pub mod avro;
 
@@ -72,9 +73,11 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(sqlite::SqliteSource::new(connection_string)?))
     } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
         Ok(Box::new(postgres::PostgresSource::new(connection_string)?))
+    } else if connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
+        Ok(Box::new(mssql::MssqlSource::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table", connection_string)
+            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table", connection_string)
         ))
     }
 }
