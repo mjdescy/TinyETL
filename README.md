@@ -29,7 +29,7 @@ tinyetl "https://api.data.gov/export.json" analysis.parquet
 ✅ **180k+ rows/sec streaming** — handles massive datasets efficiently  
 ✅ **Zero configuration** — automatic schema detection and table creation  
 ✅ **Lua transformations** — powerful data transformations  
-✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite  
+✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite, native MSSQL (currently slow). Coming soon: ODBC, Snowflake, Databricks, OneLake
 ✅ **Cross-platform** — Linux, macOS, Windows ready
 
 ## Quick Install
