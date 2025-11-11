@@ -6,6 +6,7 @@ pub mod mysql;
 pub mod mssql;
 pub mod parquet;
 pub mod avro;
+pub mod duckdb;
 
 use async_trait::async_trait;
 use crate::{Result, schema::{Schema, Row}};
@@ -68,6 +69,9 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(parquet::ParquetSource::new(connection_string)?))
     } else if connection_string.ends_with(".avro") {
         Ok(Box::new(avro::AvroSource::new(connection_string)?))
+    } else if (connection_string.contains(".duckdb#") || connection_string.ends_with(".duckdb"))
+        || connection_string.starts_with("duckdb:") {
+        Ok(Box::new(duckdb::DuckdbSource::new(connection_string)?))
     } else if (connection_string.contains(".db#") || connection_string.ends_with(".db"))
         || connection_string.starts_with("sqlite:") {
         Ok(Box::new(sqlite::SqliteSource::new(connection_string)?))
@@ -79,7 +83,7 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(mssql::MssqlSource::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table", connection_string)
+            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, file.duckdb#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table", connection_string)
         ))
     }
 }
@@ -89,7 +93,9 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
 pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
     // Handle protocol-based connections first
     if connection_string.contains("://") {
-        if connection_string.starts_with("sqlite://") {
+        if connection_string.starts_with("duckdb://") {
+            return Ok(Box::new(duckdb::DuckdbTarget::new(connection_string)?));
+        } else if connection_string.starts_with("sqlite://") {
             return Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?));
         } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
             return Ok(Box::new(postgres::PostgresTarget::new(connection_string)?));
@@ -99,7 +105,7 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
             return Ok(Box::new(mssql::MssqlTarget::new(connection_string)?));
         } else {
             return Err(crate::TinyEtlError::Configuration(format!(
-                "Unsupported protocol in: {}. Supported protocols: sqlite://, postgres://, mysql://, mssql://",
+                "Unsupported protocol in: {}. Supported protocols: duckdb://, sqlite://, postgres://, mysql://, mssql://",
                 connection_string
             )));
         }
@@ -114,14 +120,17 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
         Ok(Box::new(parquet::ParquetTarget::new(connection_string)?))
     } else if connection_string.ends_with(".avro") {
         Ok(Box::new(avro::AvroTarget::new(connection_string)?))
+    } else if connection_string.contains(".duckdb#") || connection_string.ends_with(".duckdb") || connection_string.starts_with("duckdb:") {
+        // Legacy DuckDB support: file.duckdb, file.duckdb#table, duckdb:file.duckdb
+        Ok(Box::new(duckdb::DuckdbTarget::new(connection_string)?))
     } else if connection_string.contains(".db#") || connection_string.ends_with(".db") || connection_string.starts_with("sqlite:") {
         // Legacy SQLite support: file.db, file.db#table, sqlite:file.db
         Ok(Box::new(sqlite::SqliteTarget::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(format!(
             "Unsupported target type: {}. Supported formats: \
-            file.csv, file.json, file.parquet, file.avro, file.db, file.db#table, \
-            sqlite://path/file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table",
+            file.csv, file.json, file.parquet, file.avro, file.db, file.db#table, file.duckdb, file.duckdb#table, \
+            duckdb://path/file.duckdb#table, sqlite://path/file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table",
             connection_string
         )))
     }
@@ -140,7 +149,7 @@ pub async fn create_source_from_url_with_type(connection_string: &str, source_ty
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
         // Try database connectors first for database protocols
-        if connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") || connection_string.starts_with("mysql://") || connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
+        if connection_string.starts_with("duckdb://") || connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") || connection_string.starts_with("mysql://") || connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
             create_source(connection_string)
         } else {
             // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)
