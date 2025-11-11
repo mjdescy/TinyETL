@@ -234,7 +234,9 @@ impl TransferEngine {
         
         for column in &schema.columns {
             println!("│ {:<19} │ {:<13} │ {:<8} │", 
-                column.name, column.data_type, column.nullable);
+                column.name, 
+                format!("{}", column.data_type), 
+                format!("{}", column.nullable));
         }
         println!("└─────────────────────┴───────────────┴──────────┘");
     }
