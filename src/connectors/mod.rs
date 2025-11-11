@@ -73,11 +73,13 @@ pub fn create_source(connection_string: &str) -> Result<Box<dyn Source>> {
         Ok(Box::new(sqlite::SqliteSource::new(connection_string)?))
     } else if connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") {
         Ok(Box::new(postgres::PostgresSource::new(connection_string)?))
+    } else if connection_string.starts_with("mysql://") {
+        Ok(Box::new(mysql::MysqlSource::new(connection_string)?))
     } else if connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
         Ok(Box::new(mssql::MssqlSource::new(connection_string)?))
     } else {
         Err(crate::TinyEtlError::Configuration(
-            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table", connection_string)
+            format!("Unsupported source type: {}. Supported formats: file.csv, file.json, file.parquet, file.avro, file.db#table, postgres://user:pass@host:port/db#table, mysql://user:pass@host:port/db#table, mssql://user:pass@host:port/db#table", connection_string)
         ))
     }
 }
@@ -138,7 +140,7 @@ pub async fn create_source_from_url_with_type(connection_string: &str, source_ty
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
         // Try database connectors first for database protocols
-        if connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") || connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
+        if connection_string.starts_with("sqlite://") || connection_string.starts_with("postgres://") || connection_string.starts_with("postgresql://") || connection_string.starts_with("mysql://") || connection_string.starts_with("mssql://") || connection_string.starts_with("sqlserver://") {
             create_source(connection_string)
         } else {
             // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)

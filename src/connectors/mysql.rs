@@ -3,12 +3,272 @@ use async_trait::async_trait;
 use sqlx::{MySqlPool, Row as SqlxRow, Column as SqlxColumn};
 use url::Url;
 use rust_decimal::Decimal;
+use chrono::{DateTime, Utc, NaiveDateTime, NaiveDate};
 
 use crate::{
     Result, TinyEtlError,
     schema::{Schema, Row, Value, Column, DataType, SchemaInferer},
-    connectors::Target,
+    connectors::{Source, Target},
 };
+
+pub struct MysqlSource {
+    connection_string: String,
+    database_url: String,
+    table_name: String,
+    pool: Option<MySqlPool>,
+    current_offset: usize,
+    total_rows: Option<usize>,
+}
+
+impl MysqlSource {
+    pub fn new(connection_string: &str) -> Result<Self> {
+        let (db_url, table_name) = Self::parse_connection_string(connection_string)?;
+        
+        Ok(Self {
+            connection_string: connection_string.to_string(),
+            database_url: db_url,
+            table_name,
+            pool: None,
+            current_offset: 0,
+            total_rows: None,
+        })
+    }
+
+    fn parse_connection_string(connection_string: &str) -> Result<(String, String)> {
+        if let Some((db_part, table_part)) = connection_string.split_once('#') {
+            Ok((db_part.to_string(), table_part.to_string()))
+        } else {
+            return Err(TinyEtlError::Configuration(
+                "MySQL source requires table specification: mysql://user:pass@host:port/db#table".to_string()
+            ));
+        }
+    }
+
+    async fn get_pool(&self) -> Result<&MySqlPool> {
+        self.pool.as_ref().ok_or_else(|| {
+            TinyEtlError::Connection("MySQL connection not established".to_string())
+        })
+    }
+
+    fn extract_value(&self, row: &sqlx::mysql::MySqlRow, column: &sqlx::mysql::MySqlColumn) -> Result<Value> {
+        let col_name = column.name();
+        
+        // Try different MySQL types in order of likelihood
+        if let Ok(val) = row.try_get::<Option<String>, _>(col_name) {
+            match val {
+                Some(s) => Ok(Value::String(s)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<i64>, _>(col_name) {
+            match val {
+                Some(i) => Ok(Value::Integer(i)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<i32>, _>(col_name) {
+            match val {
+                Some(i) => Ok(Value::Integer(i as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<i16>, _>(col_name) {
+            match val {
+                Some(i) => Ok(Value::Integer(i as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<i8>, _>(col_name) {
+            match val {
+                Some(i) => Ok(Value::Integer(i as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<u64>, _>(col_name) {
+            match val {
+                Some(u) => Ok(Value::Integer(u as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<u32>, _>(col_name) {
+            match val {
+                Some(u) => Ok(Value::Integer(u as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<u16>, _>(col_name) {
+            match val {
+                Some(u) => Ok(Value::Integer(u as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<u8>, _>(col_name) {
+            match val {
+                Some(u) => Ok(Value::Integer(u as i64)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<f64>, _>(col_name) {
+            match val {
+                Some(f) => {
+                    match Decimal::try_from(f) {
+                        Ok(d) => Ok(Value::Decimal(d)),
+                        Err(_) => Ok(Value::String(f.to_string())),
+                    }
+                },
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<f32>, _>(col_name) {
+            match val {
+                Some(f) => {
+                    match Decimal::try_from(f as f64) {
+                        Ok(d) => Ok(Value::Decimal(d)),
+                        Err(_) => Ok(Value::String(f.to_string())),
+                    }
+                },
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<bool>, _>(col_name) {
+            match val {
+                Some(b) => Ok(Value::Boolean(b)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<DateTime<Utc>>, _>(col_name) {
+            match val {
+                Some(dt) => Ok(Value::Date(dt)),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<NaiveDateTime>, _>(col_name) {
+            match val {
+                Some(dt) => Ok(Value::Date(DateTime::from_utc(dt, Utc))),
+                None => Ok(Value::Null),
+            }
+        } else if let Ok(val) = row.try_get::<Option<NaiveDate>, _>(col_name) {
+            match val {
+                Some(date) => {
+                    let datetime = date.and_hms_opt(0, 0, 0).unwrap();
+                    Ok(Value::Date(DateTime::from_utc(datetime, Utc)))
+                },
+                None => Ok(Value::Null),
+            }
+        } else {
+            Ok(Value::Null)
+        }
+    }
+}
+
+#[async_trait]
+impl Source for MysqlSource {
+    async fn connect(&mut self) -> Result<()> {
+        let pool = MySqlPool::connect(&self.database_url)
+            .await
+            .map_err(|e| TinyEtlError::Connection(format!(
+                "Failed to connect to MySQL database: {}", e
+            )))?;
+        
+        self.pool = Some(pool);
+        Ok(())
+    }
+
+    async fn infer_schema(&mut self, sample_size: usize) -> Result<Schema> {
+        let pool = self.get_pool().await?;
+
+        let query = format!("SELECT * FROM `{}` LIMIT {}", self.table_name, sample_size);
+
+        let rows = sqlx::query(&query)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to fetch sample data: {}", e)))?;
+
+        if rows.is_empty() {
+            return Ok(Schema {
+                columns: Vec::new(),
+                estimated_rows: Some(0),
+                primary_key_candidate: None,
+            });
+        }
+
+        // Convert MySQL rows to our Row format
+        let mut schema_rows = Vec::new();
+        for row in &rows {
+            let mut schema_row = Row::new();
+            for column in row.columns() {
+                let col_name = column.name();
+                let value = self.extract_value(&row, column)?;
+                schema_row.insert(col_name.to_string(), value);
+            }
+            schema_rows.push(schema_row);
+        }
+
+        let mut schema = SchemaInferer::infer_from_rows(&schema_rows)?;
+        
+        // Get estimated row count
+        if let Ok(count_result) = self.estimated_row_count().await {
+            schema.estimated_rows = count_result;
+        }
+
+        Ok(schema)
+    }
+
+    async fn read_batch(&mut self, batch_size: usize) -> Result<Vec<Row>> {
+        let pool = self.get_pool().await?;
+
+        let query = format!("SELECT * FROM `{}` LIMIT {} OFFSET {}", 
+                self.table_name, batch_size, self.current_offset);
+
+        let rows = sqlx::query(&query)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to fetch batch: {}", e)))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let mut schema_row = Row::new();
+            for column in row.columns() {
+                let col_name = column.name();
+                let value = self.extract_value(&row, column)?;
+                schema_row.insert(col_name.to_string(), value);
+            }
+            result.push(schema_row);
+        }
+
+        self.current_offset += result.len();
+        Ok(result)
+    }
+
+    async fn estimated_row_count(&self) -> Result<Option<usize>> {
+        let pool = self.get_pool().await?;
+
+        // Try to get estimated count from information_schema
+        let count_query = format!(
+            "SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_NAME = '{}' AND TABLE_SCHEMA = DATABASE()",
+            self.table_name
+        );
+
+        match sqlx::query_scalar::<_, i64>(&count_query)
+            .fetch_one(pool)
+            .await
+        {
+            Ok(count) if count > 0 => Ok(Some(count as usize)),
+            _ => {
+                // Fallback to exact count if estimate fails
+                let exact_query = format!("SELECT COUNT(*) FROM `{}`", self.table_name);
+                match sqlx::query_scalar::<_, i64>(&exact_query)
+                    .fetch_one(pool)
+                    .await
+                {
+                    Ok(count) => Ok(Some(count as usize)),
+                    Err(e) => Err(TinyEtlError::DataTransfer(format!("Failed to get row count: {}", e))),
+                }
+            }
+        }
+    }
+
+    async fn reset(&mut self) -> Result<()> {
+        self.current_offset = 0;
+        Ok(())
+    }
+
+    fn has_more(&self) -> bool {
+        if let Some(total) = self.total_rows {
+            self.current_offset < total
+        } else {
+            // If we don't know the total, assume there might be more
+            true
+        }
+    }
+}
 
 pub struct MysqlTarget {
     connection_string: String,
