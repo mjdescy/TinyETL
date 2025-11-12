@@ -33,22 +33,7 @@ impl ParquetSource {
     }
 
     fn arrow_type_to_schema_type(arrow_type: &DataType) -> crate::schema::DataType {
-        match arrow_type {
-            DataType::Utf8 | DataType::LargeUtf8 => crate::schema::DataType::String,
-            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                crate::schema::DataType::Integer
-            }
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
-                crate::schema::DataType::Integer
-            }
-            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
-                crate::schema::DataType::Decimal
-            }
-            DataType::Boolean => crate::schema::DataType::Boolean,
-            DataType::Date32 | DataType::Date64 => crate::schema::DataType::Date,
-            DataType::Timestamp(_, _) => crate::schema::DataType::DateTime,
-            _ => crate::schema::DataType::String, // Default to string for complex types
-        }
+        crate::schema::DataType::from_arrow(arrow_type)
     }
 
     fn arrow_array_to_values(array: &dyn Array, column_name: &str) -> Result<Vec<(String, Value)>> {
@@ -284,20 +269,7 @@ impl ParquetTarget {
     }
 
     fn schema_to_arrow_schema(schema: &Schema) -> Arc<arrow::datatypes::Schema> {
-        let fields: Vec<Field> = schema.columns.iter().map(|col| {
-            let arrow_type = match col.data_type {
-                crate::schema::DataType::String => DataType::Utf8,
-                crate::schema::DataType::Integer => DataType::Int64,
-                crate::schema::DataType::Decimal => DataType::Float64,
-                crate::schema::DataType::Boolean => DataType::Boolean,
-                crate::schema::DataType::Date => DataType::Date64,
-                crate::schema::DataType::DateTime => DataType::Timestamp(TimeUnit::Nanosecond, None),
-                crate::schema::DataType::Null => DataType::Utf8, // Default to string for null type
-            };
-            Field::new(&col.name, arrow_type, col.nullable)
-        }).collect();
-
-        Arc::new(arrow::datatypes::Schema::new(fields))
+        Arc::new(schema.to_arrow_schema())
     }
 
     fn rows_to_record_batch(rows: &[Row], schema: &Arc<arrow::datatypes::Schema>) -> Result<RecordBatch> {

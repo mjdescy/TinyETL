@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use rust_decimal::Decimal;
 use regex::Regex;
+use arrow::datatypes::{DataType as ArrowDataType, TimeUnit, Field};
 use crate::Result;
 
+/// Wrapper around Arrow DataType for schema definition
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataType {
     String,
@@ -15,6 +17,37 @@ pub enum DataType {
     Date,
     DateTime,
     Null,
+}
+
+impl DataType {
+    /// Convert to Arrow DataType
+    pub fn to_arrow(&self) -> ArrowDataType {
+        match self {
+            DataType::String => ArrowDataType::Utf8,
+            DataType::Integer => ArrowDataType::Int64,
+            DataType::Decimal => ArrowDataType::Float64, // Could also use Decimal128
+            DataType::Boolean => ArrowDataType::Boolean,
+            DataType::Date => ArrowDataType::Date64,
+            DataType::DateTime => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            DataType::Null => ArrowDataType::Null,
+        }
+    }
+    
+    /// Convert from Arrow DataType
+    pub fn from_arrow(arrow_type: &ArrowDataType) -> Self {
+        match arrow_type {
+            ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => DataType::String,
+            ArrowDataType::Int8 | ArrowDataType::Int16 | ArrowDataType::Int32 | ArrowDataType::Int64 => DataType::Integer,
+            ArrowDataType::UInt8 | ArrowDataType::UInt16 | ArrowDataType::UInt32 | ArrowDataType::UInt64 => DataType::Integer,
+            ArrowDataType::Float16 | ArrowDataType::Float32 | ArrowDataType::Float64 => DataType::Decimal,
+            ArrowDataType::Decimal128(_, _) | ArrowDataType::Decimal256(_, _) => DataType::Decimal,
+            ArrowDataType::Boolean => DataType::Boolean,
+            ArrowDataType::Date32 | ArrowDataType::Date64 => DataType::Date,
+            ArrowDataType::Timestamp(_, _) => DataType::DateTime,
+            ArrowDataType::Null => DataType::Null,
+            _ => DataType::String, // Default to string for complex types
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +240,22 @@ pub struct Column {
     pub nullable: bool,
 }
 
+impl Column {
+    /// Convert to Arrow Field
+    pub fn to_arrow_field(&self) -> Field {
+        Field::new(&self.name, self.data_type.to_arrow(), self.nullable)
+    }
+    
+    /// Convert from Arrow Field
+    pub fn from_arrow_field(field: &Field) -> Self {
+        Self {
+            name: field.name().clone(),
+            data_type: DataType::from_arrow(field.data_type()),
+            nullable: field.is_nullable(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
     pub columns: Vec<Column>,
@@ -214,6 +263,30 @@ pub struct Schema {
     pub primary_key_candidate: Option<String>,
 }
 
+impl Schema {
+    /// Convert to Arrow Schema
+    pub fn to_arrow_schema(&self) -> arrow::datatypes::Schema {
+        let fields: Vec<Field> = self.columns.iter()
+            .map(|col| col.to_arrow_field())
+            .collect();
+        arrow::datatypes::Schema::new(fields)
+    }
+    
+    /// Convert from Arrow Schema
+    pub fn from_arrow_schema(arrow_schema: &arrow::datatypes::Schema) -> Self {
+        let columns: Vec<Column> = arrow_schema.fields().iter()
+            .map(|field| Column::from_arrow_field(field))
+            .collect();
+        
+        Self {
+            columns,
+            estimated_rows: None,
+            primary_key_candidate: None,
+        }
+    }
+}
+
+/// Value type compatible with Arrow data representation
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
@@ -223,6 +296,64 @@ pub enum Value {
     Boolean(bool),
     Date(DateTime<Utc>),
     Null,
+}
+
+impl Value {
+    /// Get the corresponding Arrow DataType for this value
+    pub fn arrow_type(&self) -> ArrowDataType {
+        match self {
+            Value::String(_) => ArrowDataType::Utf8,
+            Value::Integer(_) => ArrowDataType::Int64,
+            Value::Decimal(_) => ArrowDataType::Float64,
+            Value::Boolean(_) => ArrowDataType::Boolean,
+            Value::Date(_) => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            Value::Null => ArrowDataType::Null,
+        }
+    }
+    
+    /// Convert to string representation for Arrow array building
+    pub fn to_string_for_arrow(&self) -> Option<String> {
+        match self {
+            Value::String(s) => Some(s.clone()),
+            Value::Integer(i) => Some(i.to_string()),
+            Value::Decimal(d) => Some(d.to_string()),
+            Value::Boolean(b) => Some(b.to_string()),
+            Value::Date(dt) => Some(dt.to_rfc3339()),
+            Value::Null => None,
+        }
+    }
+    
+    /// Convert to i64 for Arrow array building
+    pub fn to_i64(&self) -> Option<i64> {
+        match self {
+            Value::Integer(i) => Some(*i),
+            _ => None,
+        }
+    }
+    
+    /// Convert to f64 for Arrow array building
+    pub fn to_f64(&self) -> Option<f64> {
+        match self {
+            Value::Decimal(d) => (*d).try_into().ok(),
+            _ => None,
+        }
+    }
+    
+    /// Convert to bool for Arrow array building
+    pub fn to_bool(&self) -> Option<bool> {
+        match self {
+            Value::Boolean(b) => Some(*b),
+            _ => None,
+        }
+    }
+    
+    /// Convert to timestamp nanoseconds for Arrow array building
+    pub fn to_timestamp_nanos(&self) -> Option<i64> {
+        match self {
+            Value::Date(dt) => dt.timestamp_nanos_opt(),
+            _ => None,
+        }
+    }
 }
 
 pub type Row = HashMap<String, Value>;
