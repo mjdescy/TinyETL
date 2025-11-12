@@ -426,8 +426,6 @@ impl SchemaInferer {
     }
     
     pub fn resolve_column_type(types: &[DataType]) -> (DataType, bool) {
-        let has_null = types.iter().any(|t| matches!(t, DataType::Null));
-        
         // Filter out nulls for type determination
         let non_null_types: Vec<&DataType> = types
             .iter()
@@ -440,12 +438,18 @@ impl SchemaInferer {
         
         // If all non-null values are the same type, use that type
         let first_type = non_null_types[0];
-        if non_null_types.iter().all(|t| std::mem::discriminant(*t) == std::mem::discriminant(first_type)) {
-            (first_type.clone(), has_null)
+        let resolved_type = if non_null_types.iter().all(|t| std::mem::discriminant(*t) == std::mem::discriminant(first_type)) {
+            first_type.clone()
         } else {
             // Mixed types default to String
-            (DataType::String, has_null)
-        }
+            DataType::String
+        };
+        
+        // IMPORTANT: Always return nullable=true when inferring from sample data.
+        // We cannot be certain that unseen data doesn't contain NULLs, and it's safer
+        // for ETL operations to allow NULLs than to create NOT NULL constraints that
+        // might be violated by subsequent batches or data that wasn't in the sample.
+        (resolved_type, true)
     }
 }
 
@@ -488,7 +492,7 @@ mod tests {
         
         let id_col = schema.columns.iter().find(|c| c.name == "id").unwrap();
         assert_eq!(id_col.data_type, DataType::Integer);
-        assert!(!id_col.nullable);
+        assert!(id_col.nullable); // Always nullable when inferred from sample data
     }
     
     #[test]
@@ -541,11 +545,11 @@ mod tests {
     
     #[test]
     fn test_column_type_resolution() {
-        // All same type
+        // All same type - but still nullable when inferred
         let types = vec![DataType::Integer, DataType::Integer, DataType::Integer];
         let (resolved_type, nullable) = SchemaInferer::resolve_column_type(&types);
         assert_eq!(resolved_type, DataType::Integer);
-        assert!(!nullable);
+        assert!(nullable); // Always nullable when inferring from sample data
         
         // With nulls
         let types = vec![DataType::String, DataType::Null, DataType::String];
