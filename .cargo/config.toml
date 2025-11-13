@@ -5,8 +5,8 @@
 # Additional rustc flags for all builds
 
 [target.x86_64-apple-darwin]
-# Intel macOS - Homebrew libraries
-rustflags = ["-L", "/usr/local/opt/unixodbc/lib", "-L", "/opt/homebrew/opt/unixodbc/lib"]
+# Intel macOS - Homebrew libraries (x86_64 only)
+rustflags = ["-L", "/usr/local/opt/unixodbc/lib"]
 
 [target.aarch64-apple-darwin]
 # Apple Silicon macOS - Homebrew libraries
