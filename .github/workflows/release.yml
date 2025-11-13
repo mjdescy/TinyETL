@@ -74,12 +74,19 @@ jobs:
         # Windows has native ODBC support, no additional installation needed
         echo "Using Windows native ODBC driver manager"
 
-    - name: Set ODBC library path (macOS)
-      if: matrix.os == 'macos-latest'
+    - name: Set ODBC library path (macOS ARM64)
+      if: matrix.os == 'macos-latest' && matrix.target == 'aarch64-apple-darwin'
       run: |
         echo "RUSTFLAGS=-L /opt/homebrew/opt/unixodbc/lib" >> $GITHUB_ENV
         echo "LIBRARY_PATH=/opt/homebrew/opt/unixodbc/lib:$LIBRARY_PATH" >> $GITHUB_ENV
         echo "DYLD_LIBRARY_PATH=/opt/homebrew/opt/unixodbc/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
+    - name: Set ODBC library path (macOS x86_64)
+      if: matrix.os == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
+      run: |
+        echo "RUSTFLAGS=-L /usr/local/opt/unixodbc/lib" >> $GITHUB_ENV
+        echo "LIBRARY_PATH=/usr/local/opt/unixodbc/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+        echo "DYLD_LIBRARY_PATH=/usr/local/opt/unixodbc/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Set ODBC library path (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
