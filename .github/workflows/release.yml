@@ -93,18 +93,20 @@ jobs:
         echo "LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
-    - name: Build release binary
-      id: build
-      run: |
-        if [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
-          arch -x86_64 cargo build --release --target ${{ matrix.target }}
-        else
-          cargo build --release --target ${{ matrix.target }}
-        fi
+    - name: Build release binary (Unix with x86_64 emulation)
+      if: matrix.target == 'x86_64-apple-darwin'
+      id: build-x86
+      shell: bash
+      run: arch -x86_64 cargo build --release --target ${{ matrix.target }}
+
+    - name: Build release binary (All other targets)
+      if: matrix.target != 'x86_64-apple-darwin'
+      id: build-other
+      run: cargo build --release --target ${{ matrix.target }}
 
 
     - name: Check build success
-      if: failure() && steps.build.outcome == 'failure'
+      if: failure() && (steps.build-x86.outcome == 'failure' || steps.build-other.outcome == 'failure')
       run: |
         echo "::error::Build failed for ${{ matrix.target }}"
         echo "::notice::This platform will be skipped in the release"
