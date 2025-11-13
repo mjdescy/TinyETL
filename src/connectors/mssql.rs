@@ -521,56 +521,77 @@ impl Target for MssqlTarget {
 
         let mut total_written = 0;
         
+        // Begin explicit transaction for the entire batch
+        // This dramatically improves performance by reducing commit overhead
+        client.execute("BEGIN TRANSACTION", &[]).await
+            .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to begin transaction: {}", e)))?;
+
         // Process rows in larger chunks for better performance
         // SQL Server can handle 1000 rows per INSERT statement efficiently
         let chunk_size = self.max_batch_size.min(1000);
         
-        for chunk in rows.chunks(chunk_size) {
-            // Build the INSERT statement directly to avoid intermediate allocations
-            // Estimate size: table name + columns + (~100 bytes per row avg)
-            let estimated_size = 200 + column_names.len() * 25 + chunk.len() * 150;
-            let mut insert_sql = String::with_capacity(estimated_size);
-            
-            insert_sql.push_str("INSERT INTO [");
-            insert_sql.push_str(&self.table_name);
-            insert_sql.push_str("] (");
-            insert_sql.push_str(&column_names.join(", "));
-            insert_sql.push_str(") VALUES ");
-            
-            for (row_idx, row) in chunk.iter().enumerate() {
-                if row.len() != schema.columns.len() {
-                    return Err(TinyEtlError::DataTransfer(format!(
-                        "Row has {} values but schema expects {}",
-                        row.len(),
-                        schema.columns.len()
-                    )));
-                }
-
-                if row_idx > 0 {
-                    insert_sql.push_str(", ");
-                }
-                insert_sql.push('(');
+        // Wrap in a closure to handle rollback on error
+        let result = async {
+            for chunk in rows.chunks(chunk_size) {
+                // Build the INSERT statement directly to avoid intermediate allocations
+                // Estimate size: table name + columns + (~100 bytes per row avg)
+                let estimated_size = 200 + column_names.len() * 25 + chunk.len() * 150;
+                let mut insert_sql = String::with_capacity(estimated_size);
                 
-                // Write VALUES clause directly into the string buffer for maximum performance
-                for (col_idx, col) in schema.columns.iter().enumerate() {
-                    if col_idx > 0 {
+                insert_sql.push_str("INSERT INTO [");
+                insert_sql.push_str(&self.table_name);
+                insert_sql.push_str("] (");
+                insert_sql.push_str(&column_names.join(", "));
+                insert_sql.push_str(") VALUES ");
+                
+                for (row_idx, row) in chunk.iter().enumerate() {
+                    if row.len() != schema.columns.len() {
+                        return Err(TinyEtlError::DataTransfer(format!(
+                            "Row has {} values but schema expects {}",
+                            row.len(),
+                            schema.columns.len()
+                        )));
+                    }
+
+                    if row_idx > 0 {
                         insert_sql.push_str(", ");
                     }
+                    insert_sql.push('(');
                     
-                    let value = row.get(&col.name).unwrap_or(&Value::Null);
-                    Self::write_value_to_buffer(&mut insert_sql, value, &col.data_type);
+                    // Write VALUES clause directly into the string buffer for maximum performance
+                    for (col_idx, col) in schema.columns.iter().enumerate() {
+                        if col_idx > 0 {
+                            insert_sql.push_str(", ");
+                        }
+                        
+                        let value = row.get(&col.name).unwrap_or(&Value::Null);
+                        Self::write_value_to_buffer(&mut insert_sql, value, &col.data_type);
+                    }
+                    
+                    insert_sql.push(')');
                 }
-                
-                insert_sql.push(')');
+
+                client.execute(&insert_sql, &[]).await
+                    .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch: {}", e)))?;
+
+                total_written += chunk.len();
             }
+            Ok::<usize, TinyEtlError>(total_written)
+        }.await;
 
-            client.execute(&insert_sql, &[]).await
-                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch: {}", e)))?;
-
-            total_written += chunk.len();
+        // Commit or rollback based on result
+        match result {
+            Ok(count) => {
+                client.execute("COMMIT TRANSACTION", &[]).await
+                    .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to commit transaction: {}", e)))?;
+                Ok(count)
+            }
+            Err(e) => {
+                // Attempt rollback on error
+                let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                Err(e)
+            }
         }
-
-        Ok(total_written)
     }
 
     async fn finalize(&mut self) -> Result<()> {

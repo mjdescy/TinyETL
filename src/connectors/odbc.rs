@@ -378,6 +378,11 @@ impl Target for OdbcTarget {
         
         let conn = conn.connection();
         
+        // Begin explicit transaction for the entire batch
+        // This dramatically improves performance by reducing autocommit overhead
+        conn.execute("BEGIN TRANSACTION", ())
+            .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to begin transaction: {}", e)))?;
+        
         // ODBC has limits on parameter counts. SQL Server typically supports up to ~2100 parameters.
         // To be safe, we'll chunk inserts to stay well under this limit.
         // With 12 columns, we can do ~150 rows per insert (12 * 150 = 1800 parameters)
@@ -387,84 +392,99 @@ impl Target for OdbcTarget {
         
         let mut total_inserted = 0;
         
-        // Process rows in chunks
-        for chunk in rows.chunks(chunk_size) {
-            // Build column names list (quoted for SQL Server compatibility)
-            let column_names = schema.columns.iter()
-                .map(|c| format!("[{}]", c.name))
-                .collect::<Vec<_>>()
-                .join(", ");
-            
-            // Build bulk INSERT statement with multiple value sets for this chunk
-            // Format: INSERT INTO table (col1, col2) VALUES (?,?),(?,?),(?,?)
-            let single_row_placeholders = schema.columns.iter()
-                .map(|_| "?")
-                .collect::<Vec<_>>()
-                .join(", ");
-            
-            let all_value_sets = (0..chunk.len())
-                .map(|_| format!("({})", single_row_placeholders))
-                .collect::<Vec<_>>()
-                .join(", ");
-            
-            let insert_sql = format!(
-                "INSERT INTO [{}] ({}) VALUES {}",
-                self.table_name, column_names, all_value_sets
-            );
-            
-            // Prepare statement for this chunk
-            let mut prepared = conn.prepare(&insert_sql)
-                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to prepare bulk INSERT statement: {}", e)))?;
-            
-            // Build parameters for this chunk
-            let total_params_chunk = chunk.len() * schema.columns.len();
-            let mut param_strings = Vec::with_capacity(total_params_chunk);
-            
-            // Convert all values to strings upfront
-            for row in chunk {
-                for col in &schema.columns {
-                    let value = row.get(&col.name).unwrap_or(&Value::Null);
-                    let string_value = match value {
-                        Value::String(s) => s.clone(),
-                        Value::Integer(i) => i.to_string(),
-                        Value::Decimal(d) => d.to_string(),
-                        Value::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
-                        Value::Date(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        Value::Null => String::new(),
-                    };
-                    param_strings.push(string_value);
+        // Process rows in chunks - wrap in closure to handle rollback on error
+        let result = (|| -> Result<usize> {
+            for chunk in rows.chunks(chunk_size) {
+                // Build column names list (quoted for SQL Server compatibility)
+                let column_names = schema.columns.iter()
+                    .map(|c| format!("[{}]", c.name))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                // Build bulk INSERT statement with multiple value sets for this chunk
+                // Format: INSERT INTO table (col1, col2) VALUES (?,?),(?,?),(?,?)
+                let single_row_placeholders = schema.columns.iter()
+                    .map(|_| "?")
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                let all_value_sets = (0..chunk.len())
+                    .map(|_| format!("({})", single_row_placeholders))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                let insert_sql = format!(
+                    "INSERT INTO [{}] ({}) VALUES {}",
+                    self.table_name, column_names, all_value_sets
+                );
+                
+                // Prepare statement for this chunk
+                let mut prepared = conn.prepare(&insert_sql)
+                    .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to prepare bulk INSERT statement: {}", e)))?;
+                
+                // Build parameters for this chunk
+                let total_params_chunk = chunk.len() * schema.columns.len();
+                let mut param_strings = Vec::with_capacity(total_params_chunk);
+                
+                // Convert all values to strings upfront
+                for row in chunk {
+                    for col in &schema.columns {
+                        let value = row.get(&col.name).unwrap_or(&Value::Null);
+                        let string_value = match value {
+                            Value::String(s) => s.clone(),
+                            Value::Integer(i) => i.to_string(),
+                            Value::Decimal(d) => d.to_string(),
+                            Value::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
+                            Value::Date(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                            Value::Null => String::new(),
+                        };
+                        param_strings.push(string_value);
+                    }
                 }
-            }
-            
-            // Build parameter references for ODBC
-            let mut param_idx = 0;
-            let mut param_values = Vec::with_capacity(total_params_chunk);
-            
-            for row in chunk {
-                for col in &schema.columns {
-                    let value = row.get(&col.name).unwrap_or(&Value::Null);
-                    let opt_str = match value {
-                        Value::Null => None,
-                        _ => Some(param_strings[param_idx].as_str()),
-                    };
-                    param_values.push(opt_str);
-                    param_idx += 1;
+                
+                // Build parameter references for ODBC
+                let mut param_idx = 0;
+                let mut param_values = Vec::with_capacity(total_params_chunk);
+                
+                for row in chunk {
+                    for col in &schema.columns {
+                        let value = row.get(&col.name).unwrap_or(&Value::Null);
+                        let opt_str = match value {
+                            Value::Null => None,
+                            _ => Some(param_strings[param_idx].as_str()),
+                        };
+                        param_values.push(opt_str);
+                        param_idx += 1;
+                    }
                 }
+                
+                // Convert to ODBC parameters
+                let params: Vec<_> = param_values.iter()
+                    .map(|opt_str| opt_str.as_ref().map(|s| *s).into_parameter())
+                    .collect();
+                
+                // Execute bulk insert for this chunk
+                prepared.execute(&params[..])
+                    .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch chunk: {}", e)))?;
+                
+                total_inserted += chunk.len();
             }
-            
-            // Convert to ODBC parameters
-            let params: Vec<_> = param_values.iter()
-                .map(|opt_str| opt_str.as_ref().map(|s| *s).into_parameter())
-                .collect();
-            
-            // Execute bulk insert for this chunk
-            prepared.execute(&params[..])
-                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to insert batch chunk: {}", e)))?;
-            
-            total_inserted += chunk.len();
+            Ok(total_inserted)
+        })();
+
+        // Commit or rollback based on result
+        match result {
+            Ok(count) => {
+                conn.execute("COMMIT TRANSACTION", ())
+                    .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to commit transaction: {}", e)))?;
+                Ok(count)
+            }
+            Err(e) => {
+                // Attempt rollback on error
+                let _ = conn.execute("ROLLBACK TRANSACTION", ());
+                Err(e)
+            }
         }
-        
-        Ok(total_inserted)
     }
 
     async fn finalize(&mut self) -> Result<()> {
