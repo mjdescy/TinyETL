@@ -59,15 +59,20 @@ impl MssqlSource {
     }
 
     async fn create_client(connection_string: &str) -> Result<MssqlClient> {
-        let url = Url::parse(connection_string).map_err(|e| {
+        // Support both natural format (localhost\INSTANCE) and URL-encoded format (localhost%5CINSTANCE)
+        // Replace backslashes with URL encoding before parsing
+        let sanitized_url = connection_string.replace("\\", "%5C");
+        
+        let url = Url::parse(&sanitized_url).map_err(|e| {
             TinyEtlError::Configuration(format!("Invalid MSSQL URL: {}", e))
         })?;
 
         let mut config = Config::new();
         
-        // Set server address
+        // Set server address - decode %5C back to backslash for SQL Server named instances
         if let Some(host) = url.host_str() {
-            config.host(host);
+            let decoded_host = host.replace("%5C", "\\").replace("%5c", "\\");
+            config.host(&decoded_host);
         }
         
         // Set port
