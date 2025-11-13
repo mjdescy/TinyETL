@@ -31,7 +31,7 @@ tinyetl "https://api.data.gov/export.json" analysis.parquet
    *Note: Auto-inferred schemas default all columns to nullable for safety*
 
 ✅ **Lua transformations** — powerful data transformations  
-✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite, DuckDB, native MSSQL (currently slow). Coming soon: ODBC, Snowflake, Databricks, OneLake
+✅ **Universal connectivity** — CSV, JSON, Parquet, Avro, MySQL, PostgreSQL, SQLite, DuckDB, MSSQL, ODBC. Coming soon: Snowflake, Databricks, OneLake
 
 ✅ **Cross-platform** — Linux, macOS, Windows ready
 
@@ -244,6 +244,7 @@ TinyETL supports two main categories of data sources and targets:
 - **PostgreSQL** - Advanced open-source database
 - **MySQL** - Popular relational database
 - **DuckDB** - Embedded analytical database optimized for OLAP workloads
+- **ODBC** - Universal database connectivity (SQL Server, Oracle, DB2, and more)
 
 **Connection Examples:**
 ```bash
@@ -258,6 +259,19 @@ tinyetl data.csv "postgresql://user:@localhost/mydb#customers"
 # MySQL
 tinyetl "mysql://user:@localhost:3306/mydb#products" output.json
 tinyetl data.csv "mysql://user:@localhost:3306/mydb#sales"
+
+# DuckDB
+tinyetl "products.duckdb#inventory" output.csv
+tinyetl data.csv "analytics.duckdb#sales"
+
+# ODBC - SQL Server (Windows with Trusted Auth)
+tinyetl data.csv "odbc://Driver={ODBC Driver 18 for SQL Server};Server=localhost\MSSQLSERVER01;Database=master;Trusted_Connection=Yes;TrustServerCertificate=Yes#customers"
+
+# ODBC - SQL Server (with username/password)
+tinyetl data.csv "odbc://Driver={SQL Server};Server=localhost;Database=mydb;UID=sa;PWD=MyPass123#orders"
+
+# ODBC - Reading from SQL Server
+tinyetl "odbc://Driver={ODBC Driver 18 for SQL Server};Server=localhost;Database=master;Trusted_Connection=Yes#employees" output.csv
 
 # DuckDB
 tinyetl "products.duckdb#inventory" output.csv
@@ -335,9 +349,42 @@ tinyetl "products.duckdb#inventory" output.csv
 tinyetl "analytics.duckdb#daily_sales" report.parquet
 ```
 
+**ODBC (Universal Database Connectivity):**
+
+ODBC provides connectivity to SQL Server, Oracle, DB2, and many other databases. The connection string format varies by driver.
+
+```bash
+# SQL Server with Windows Authentication (Trusted Connection)
+tinyetl data.csv "odbc://Driver={ODBC Driver 18 for SQL Server};Server=localhost\MSSQLSERVER01;Database=master;Trusted_Connection=Yes;TrustServerCertificate=Yes#customers"
+
+# SQL Server with SQL Authentication
+tinyetl data.csv "odbc://Driver={SQL Server};Server=localhost;Database=mydb;UID=sa;PWD=MyPass123#orders"
+
+# SQL Server - Reading data
+tinyetl "odbc://Driver={ODBC Driver 18 for SQL Server};Server=localhost;Database=mydb;Trusted_Connection=Yes#sales" output.csv
+
+# Oracle Database
+tinyetl data.csv "odbc://Driver={Oracle ODBC Driver};Server=localhost:1521;Database=orcl;UID=user;PWD=pass#employees"
+
+# IBM DB2
+tinyetl data.csv "odbc://Driver={IBM DB2 ODBC DRIVER};Database=sample;Hostname=localhost;Port=50000;UID=db2admin;PWD=pass#customers"
+```
+
+**ODBC Driver Requirements:**
+- **Windows**: Drivers typically pre-installed or available via vendor installers
+- **macOS**: Install via Homebrew 
+- **Linux**: Install via package manager 
+
+**Important ODBC Notes:**
+- Connection strings must be URL-encoded if they contain special characters
+- The database must exist before using TinyETL
+- Table names are specified after `#` separator
+- Always quote ODBC connection strings to prevent shell interpretation
+- For SQL Server driver names: `ODBC Driver 18 for SQL Server` (latest), `ODBC Driver 17 for SQL Server`, or `SQL Server` (older)
+
 **Important Notes:**
 - Table names are automatically created if they don't exist
-- For MySQL, the database must exist before running TinyETL
+- For MySQL and ODBC databases, the database must exist before running TinyETL
 - DuckDB is optimized for analytical (OLAP) workloads and offers better performance than SQLite for aggregations
 - Connection strings should be quoted to prevent shell interpretation
 - Default ports: PostgreSQL (5432), MySQL (3306)
