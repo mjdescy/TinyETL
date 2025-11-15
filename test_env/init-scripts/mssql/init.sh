@@ -9,6 +9,11 @@ SQL_PID=$!
 echo "Waiting for SQL Server to start..."
 sleep 30
 
+# Use sqlcmd from tools (should be installed by install-tools.sh)
+SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
+
+echo "Using sqlcmd at: $SQLCMD"
+
 # Function to run SQL commands with retry
 run_sql() {
     local max_attempts=10
@@ -16,7 +21,7 @@ run_sql() {
     
     while [ $attempt -le $max_attempts ]; do
         echo "Attempt $attempt: Running SQL initialization..."
-        if /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P "TestPass123!" -C "$@"; then
+        if $SQLCMD -S localhost -U SA -P "TestPass123!" -C "$@"; then
             echo "✓ SQL command succeeded"
             return 0
         fi

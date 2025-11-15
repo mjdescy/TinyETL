@@ -77,7 +77,7 @@ sleep 5
 
 # Test connection first
 echo "Testing MSSQL connection..."
-if docker exec tinyetl-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P TestPass123! -Q "SELECT 1" >/dev/null 2>&1; then
+if docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -Q "SELECT 1" >/dev/null 2>&1; then
     echo "✅ MSSQL connection successful"
 else
     echo "❌ MSSQL connection failed. Container may still be initializing..."
@@ -87,11 +87,11 @@ fi
 
 # Create the database if it doesn't exist
 echo "Creating testdb database if it doesn't exist..."
-docker exec tinyetl-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P TestPass123! -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'testdb') CREATE DATABASE testdb"
+docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'testdb') CREATE DATABASE testdb"
 
 # Verify the database exists
 echo "Verifying testdb database exists..."
-DB_EXISTS=$(docker exec tinyetl-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P TestPass123! -Q "SELECT name FROM sys.databases WHERE name = 'testdb'" -h -1 | tr -d ' \r\n' | grep -c "testdb" || echo "0")
+DB_EXISTS=$(docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -Q "SELECT name FROM sys.databases WHERE name = 'testdb'" -h -1 | tr -d ' \r\n' | grep -c "testdb" || echo "0")
 
 if [ "$DB_EXISTS" = "0" ]; then
     echo "❌ FAIL: testdb database does not exist"
@@ -110,7 +110,18 @@ if [ $? -eq 0 ]; then
     
     # Verify the data was inserted
     echo "Verifying data in MSSQL..."
-    ROW_COUNT=$(docker exec tinyetl-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P TestPass123! -Q "USE testdb; SELECT COUNT(*) FROM customers" -h -1 | tr -d ' \r\n' | tail -1)
+    
+    # First check if the table exists
+    TABLE_EXISTS=$(docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -d testdb -Q "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'customers'" -h -1 | tr -d ' \r\n' | tail -1)
+    
+    if [ "$TABLE_EXISTS" = "0" ]; then
+        echo "❌ FAIL: Table 'customers' does not exist in testdb"
+        echo "Available tables:"
+        docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -d testdb -Q "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
+        exit 1
+    fi
+    
+    ROW_COUNT=$(docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -d testdb -Q "SELECT COUNT(*) FROM dbo.customers" -h -1 | tr -d ' \r\n' | tail -1)
     
     if [ "$ROW_COUNT" = "6" ]; then
         echo "✅ PASS: All 6 rows successfully inserted into MSSQL via ODBC"
@@ -118,7 +129,7 @@ if [ $? -eq 0 ]; then
         # Show sample data
         echo ""
         echo "Sample data from MSSQL table (via ODBC):"
-        docker exec tinyetl-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P TestPass123! -Q "USE testdb; SELECT TOP 3 customer_id, first_name, last_name, email FROM customers ORDER BY customer_id"
+        docker exec tinyetl-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P TestPass123! -C -d testdb -Q "SELECT TOP 3 customer_id, first_name, last_name, email FROM dbo.customers ORDER BY customer_id"
         
         echo ""
         echo "✅ PASS: ODBC connector successfully wrote data to MSSQL"

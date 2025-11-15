@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use async_trait::async_trait;
-use tiberius::{Client, Config, AuthMethod, QueryItem};
+use tiberius::{Client, Config, AuthMethod, QueryItem, EncryptionLevel};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use futures_util::stream::TryStreamExt;
 use url::Url;
@@ -100,15 +102,27 @@ impl MssqlSource {
             ));
         }
 
-        // Trust server certificate (for development)
+        // Configure encryption - use NotSupported to avoid TLS issues with self-signed certs
+        // This is equivalent to TrustServerCertificate=yes in ODBC
+        config.encryption(EncryptionLevel::NotSupported);
         config.trust_cert();
 
-        let tcp = TcpStream::connect(config.get_addr())
+        // Add connection timeout (10 seconds)
+        let tcp = timeout(
+            Duration::from_secs(10),
+            TcpStream::connect(config.get_addr())
+        )
             .await
+            .map_err(|_| TinyEtlError::Connection("Connection timeout: Failed to connect to MSSQL server within 10 seconds".to_string()))?
             .map_err(|e| TinyEtlError::Connection(format!("Failed to connect to MSSQL server: {}", e)))?;
 
-        let client = Client::connect(config, tcp.compat_write())
+        // Add authentication timeout (10 seconds)
+        let client = timeout(
+            Duration::from_secs(10),
+            Client::connect(config, tcp.compat_write())
+        )
             .await
+            .map_err(|_| TinyEtlError::Connection("Authentication timeout: Failed to authenticate with MSSQL within 10 seconds".to_string()))?
             .map_err(|e| TinyEtlError::Connection(format!("Failed to authenticate with MSSQL: {}", e)))?;
 
         Ok(client)
