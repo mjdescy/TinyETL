@@ -413,27 +413,34 @@ impl Target for OdbcTarget {
         
         let conn = conn.connection();
         
-        // Build CREATE TABLE statement with proper identifier quoting for SQL Server
-        let mut create_sql = format!("CREATE TABLE [{}] (", table_name);
+        // Check if table already exists
+        let check_query = format!("SELECT 1 FROM [{}] WHERE 1=0", table_name);
+        let table_exists = conn.execute(&check_query, ()).is_ok();
         
-        for (i, col) in schema.columns.iter().enumerate() {
-            if i > 0 {
-                create_sql.push_str(", ");
+        if !table_exists {
+            // Build CREATE TABLE statement with proper identifier quoting for SQL Server
+            let mut create_sql = format!("CREATE TABLE [{}] (", table_name);
+            
+            for (i, col) in schema.columns.iter().enumerate() {
+                if i > 0 {
+                    create_sql.push_str(", ");
+                }
+                
+                let sql_type = self.map_datatype_to_sql(&col.data_type);
+                let nullable = if col.nullable { "" } else { " NOT NULL" };
+                
+                // Quote column names with square brackets for SQL Server
+                create_sql.push_str(&format!("[{}] {}{}", col.name, sql_type, nullable));
             }
             
-            let sql_type = self.map_datatype_to_sql(&col.data_type);
-            let nullable = if col.nullable { "" } else { " NOT NULL" };
+            create_sql.push(')');
             
-            // Quote column names with square brackets for SQL Server
-            create_sql.push_str(&format!("[{}] {}{}", col.name, sql_type, nullable));
+            // Execute CREATE TABLE
+            conn.execute(&create_sql, ())
+                .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to create table: {}", e)))?;
         }
         
-        create_sql.push(')');
-        
-        // Execute CREATE TABLE
-        conn.execute(&create_sql, ())
-            .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to create table: {}", e)))?;
-        
+        // Always set the schema regardless of whether table was created
         self.schema = Some(schema.clone());
         
         Ok(())
