@@ -116,6 +116,7 @@ impl TransferEngine {
             let pb = ProgressBar::new(estimated_rows as u64);
             let style = ProgressStyle::default_bar()
                 .template("{bar:40.cyan/blue} {percent}% ({pos}/{len}) {msg}")
+                .expect("Failed to create progress bar template")
                 .progress_chars("█▇▆▅▄▃▂▁  ");
             pb.set_style(style);
             Some(pb)
