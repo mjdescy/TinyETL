@@ -16,6 +16,7 @@ pub enum DataType {
     Boolean,
     Date,
     DateTime,
+    Json,
     Null,
 }
 
@@ -29,6 +30,7 @@ impl DataType {
             DataType::Boolean => ArrowDataType::Boolean,
             DataType::Date => ArrowDataType::Date64,
             DataType::DateTime => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            DataType::Json => ArrowDataType::Utf8, // Store JSON as string in Arrow
             DataType::Null => ArrowDataType::Null,
         }
     }
@@ -81,7 +83,7 @@ impl SchemaFile {
         for column in &self.columns {
             // Validate data type
             match column.data_type.to_lowercase().as_str() {
-                "string" | "integer" | "decimal" | "boolean" | "date" | "datetime" => {},
+                "string" | "integer" | "decimal" | "boolean" | "date" | "datetime" | "json" => {},
                 _ => return Err(crate::TinyEtlError::Configuration(
                     format!("Invalid data type '{}' for column '{}'", column.data_type, column.name)
                 )),
@@ -108,6 +110,7 @@ impl SchemaFile {
                 "boolean" => DataType::Boolean,
                 "date" => DataType::Date,
                 "datetime" => DataType::DateTime,
+                "json" => DataType::Json,
                 _ => DataType::String, // Already validated, so this shouldn't happen
             };
             
@@ -164,6 +167,7 @@ impl SchemaFile {
             "boolean" => DataType::Boolean,
             "date" => DataType::Date,
             "datetime" => DataType::DateTime,
+            "json" => DataType::Json,
             _ => return Err(crate::TinyEtlError::DataValidation(
                 format!("Unknown data type '{}' for column '{}'", schema_col.data_type, schema_col.name)
             )),
@@ -225,6 +229,13 @@ impl SchemaFile {
                         format!("Invalid default date/datetime value: '{}'", default_str)
                     ))?;
                 Ok(Value::Date(parsed.with_timezone(&Utc)))
+            },
+            "json" => {
+                let parsed = serde_json::from_str(default_str)
+                    .map_err(|e| crate::TinyEtlError::Configuration(
+                        format!("Invalid default JSON value: '{}' - {}", default_str, e)
+                    ))?;
+                Ok(Value::Json(parsed))
             },
             _ => Err(crate::TinyEtlError::Configuration(
                 format!("Unsupported data type for default value: '{}'", data_type)
@@ -295,6 +306,7 @@ pub enum Value {
     Decimal(Decimal),
     Boolean(bool),
     Date(DateTime<Utc>),
+    Json(serde_json::Value),
     Null,
 }
 
@@ -307,6 +319,7 @@ impl Value {
             Value::Decimal(_) => ArrowDataType::Float64,
             Value::Boolean(_) => ArrowDataType::Boolean,
             Value::Date(_) => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            Value::Json(_) => ArrowDataType::Utf8, // Store JSON as string in Arrow
             Value::Null => ArrowDataType::Null,
         }
     }
@@ -319,6 +332,7 @@ impl Value {
             Value::Decimal(d) => Some(d.to_string()),
             Value::Boolean(b) => Some(b.to_string()),
             Value::Date(dt) => Some(dt.to_rfc3339()),
+            Value::Json(j) => Some(serde_json::to_string(j).unwrap_or_else(|_| "{}".to_string())),
             Value::Null => None,
         }
     }
@@ -351,6 +365,14 @@ impl Value {
     pub fn to_timestamp_nanos(&self) -> Option<i64> {
         match self {
             Value::Date(dt) => dt.timestamp_nanos_opt(),
+            _ => None,
+        }
+    }
+    
+    /// Convert to JSON value
+    pub fn to_json(&self) -> Option<&serde_json::Value> {
+        match self {
+            Value::Json(j) => Some(j),
             _ => None,
         }
     }
@@ -421,6 +443,7 @@ impl SchemaInferer {
             Value::Decimal(_) => DataType::Decimal,
             Value::Boolean(_) => DataType::Boolean,
             Value::Date(_) => DataType::DateTime,
+            Value::Json(_) => DataType::Json,
             Value::Null => DataType::Null,
         }
     }
@@ -462,6 +485,7 @@ impl std::fmt::Display for DataType {
             DataType::Boolean => write!(f, "BOOLEAN"),
             DataType::Date => write!(f, "DATE"),
             DataType::DateTime => write!(f, "TIMESTAMP"),
+            DataType::Json => write!(f, "JSON"),
             DataType::Null => write!(f, "NULL"),
         }
     }
@@ -530,6 +554,7 @@ mod tests {
         assert_eq!(DataType::Boolean.to_string(), "BOOLEAN");
         assert_eq!(DataType::Date.to_string(), "DATE");
         assert_eq!(DataType::DateTime.to_string(), "TIMESTAMP");
+        assert_eq!(DataType::Json.to_string(), "JSON");
         assert_eq!(DataType::Null.to_string(), "NULL");
     }
     
@@ -540,6 +565,7 @@ mod tests {
         assert_eq!(SchemaInferer::infer_type(&Value::Decimal(Decimal::new(314, 2))), DataType::Decimal);
         assert_eq!(SchemaInferer::infer_type(&Value::Boolean(true)), DataType::Boolean);
         assert_eq!(SchemaInferer::infer_type(&Value::Date(Utc::now())), DataType::DateTime);
+        assert_eq!(SchemaInferer::infer_type(&Value::Json(serde_json::json!({"key": "value"}))), DataType::Json);
         assert_eq!(SchemaInferer::infer_type(&Value::Null), DataType::Null);
     }
     
@@ -606,5 +632,64 @@ mod tests {
         let email_col = schema.columns.iter().find(|c| c.name == "email").unwrap();
         assert_eq!(email_col.data_type, DataType::String);
         assert!(email_col.nullable); // Should be nullable because it's missing in row2
+    }
+    
+    #[test]
+    fn test_json_type_inference() {
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), Value::Integer(1));
+        row.insert("metadata".to_string(), Value::Json(serde_json::json!({
+            "key": "value",
+            "count": 42
+        })));
+        
+        let schema = SchemaInferer::infer_from_rows(&[row]).unwrap();
+        assert_eq!(schema.columns.len(), 2);
+        
+        let metadata_col = schema.columns.iter().find(|c| c.name == "metadata").unwrap();
+        assert_eq!(metadata_col.data_type, DataType::Json);
+        assert!(metadata_col.nullable);
+    }
+    
+    #[test]
+    fn test_json_value_conversion() {
+        let json_value = Value::Json(serde_json::json!({"name": "test", "count": 123}));
+        
+        // Test arrow_type
+        assert_eq!(json_value.arrow_type(), ArrowDataType::Utf8);
+        
+        // Test to_string_for_arrow
+        let json_str = json_value.to_string_for_arrow().unwrap();
+        assert!(json_str.contains("\"name\""));
+        assert!(json_str.contains("\"test\""));
+        
+        // Test to_json
+        assert!(json_value.to_json().is_some());
+    }
+    
+    #[test]
+    fn test_json_default_value() {
+        let schema_file = SchemaFile {
+            columns: vec![SchemaFileColumn {
+                name: "config".to_string(),
+                data_type: "json".to_string(),
+                nullable: false,
+                pattern: None,
+                default: Some(r#"{"enabled": true, "count": 0}"#.to_string()),
+            }],
+        };
+        
+        let default = schema_file.parse_default_value(
+            r#"{"enabled": true, "count": 0}"#, 
+            "json"
+        ).unwrap();
+        
+        match default {
+            Value::Json(j) => {
+                assert_eq!(j["enabled"], true);
+                assert_eq!(j["count"], 0);
+            },
+            _ => panic!("Expected JSON value"),
+        }
     }
 }
