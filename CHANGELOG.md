@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-11-18
+
+### Added
+- **JSON as a Tier-1 Datatype**: Full support for JSON columns across all connectors
+  - Added `Json` variant to `DataType` and `Value` enums in schema system
+  - JSON values stored as `serde_json::Value` internally
+  - Schema files now accept `type: json` for column definitions
+  - JSON default values supported in schema files
+  - Type inference automatically detects JSON values
+  - Comprehensive test coverage for JSON operations
+
+### Connector Support
+- **PostgreSQL**: Maps JSON to native `JSONB` type for optimal performance
+- **MySQL**: Maps JSON to native `JSON` type
+- **SQLite**: Stores JSON as `TEXT` (SQLite's standard approach)
+- **DuckDB**: Maps JSON to native `JSON` type
+- **MSSQL**: Stores JSON as `NVARCHAR(MAX)`
+- **Snowflake**: Maps JSON to `VARIANT` (Snowflake's semi-structured data type)
+- **CSV**: Serializes JSON to compact string representation
+- **JSON**: Preserves JSON objects natively
+- **Parquet**: Stores JSON as UTF8 strings via Arrow
+- **Avro**: Stores JSON as string type
+- **ODBC**: Stores JSON as `NVARCHAR(MAX)`
+
+### Enhanced
+- Transformer (Lua): JSON values converted to strings for Lua script processing
+- Arrow integration: JSON mapped to `ArrowDataType::Utf8` for compatibility
+- Schema validation: JSON type fully integrated with validation pipeline
+
+### Examples
+- Added Example 17: SQLite JSON to Parquet demonstrating JSON column handling
+- Includes preview mode demonstration and round-trip validation
+
+### Fixed
+- Fixed JSON serialization in Parquet writer to output proper JSON strings instead of Rust debug format
+- Fixed `RUST_LOG=debug` environment variable now properly enables debug logging
+
 ## [0.7.0] - 2025-11-15
 
 ### Added
