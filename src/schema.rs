@@ -145,9 +145,32 @@ impl SchemaFile {
                 }
             }
             
-            // Validate existing values
-            if let Some(val) = row.get(&schema_col.name) {
-                self.validate_column_value(val, schema_col)?;
+            // Transform and validate existing values
+            if let Some(val) = row.get(&schema_col.name).cloned() {
+                // Convert string to JSON if schema expects JSON type
+                let transformed_val = if schema_col.data_type.to_lowercase() == "json" && matches!(val, Value::String(_)) {
+                    if let Value::String(s) = val {
+                        // Try to parse the string as JSON
+                        match serde_json::from_str::<serde_json::Value>(&s) {
+                            Ok(json_val) => Value::Json(json_val),
+                            Err(e) => {
+                                return Err(crate::TinyEtlError::DataValidation(
+                                    format!("Column '{}' contains invalid JSON: {}", schema_col.name, e)
+                                ));
+                            }
+                        }
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
+                
+                // Update the row with the transformed value
+                row.insert(schema_col.name.clone(), transformed_val.clone());
+                
+                // Validate the transformed value
+                self.validate_column_value(&transformed_val, schema_col)?;
             }
         }
         Ok(())

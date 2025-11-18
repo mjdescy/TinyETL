@@ -32,14 +32,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Initialize logging with specific module filtering
-    let env_filter = EnvFilter::new(format!(
-        "sqlx=warn,tinyetl={}",
-        match config.log_level {
-            tinyetl::config::LogLevel::Info => "info",
-            tinyetl::config::LogLevel::Warn => "warn", 
-            tinyetl::config::LogLevel::Error => "error",
-        }
-    ));
+    // Respect RUST_LOG environment variable if set, otherwise use config
+    let env_filter = if std::env::var("RUST_LOG").is_ok() {
+        EnvFilter::from_default_env()
+    } else {
+        EnvFilter::new(format!(
+            "sqlx=warn,tinyetl={}",
+            match config.log_level {
+                tinyetl::config::LogLevel::Info => "info",
+                tinyetl::config::LogLevel::Warn => "warn", 
+                tinyetl::config::LogLevel::Error => "error",
+            }
+        ))
+    };
     
     fmt()
         .with_env_filter(env_filter)

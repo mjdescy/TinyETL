@@ -27,20 +27,20 @@ sqlite3 names.db "SELECT id, name, json_extract(doc, '$.city') as city, json_ext
 echo ""
 
 echo "Step 3: Running TinyETL with --preview to see the data..."
-echo "Command: ../../target/release/tinyetl 'sqlite:names.db?table=names' 'file:names_output.parquet' --schema names_schema.yaml --preview 3"
+echo "Command: ../../target/release/tinyetl 'sqlite://names.db#names' 'names_output.parquet' --schema-file names_schema.yaml --preview 3"
 echo ""
 ../../target/release/tinyetl \
-  'sqlite:names.db?table=names' \
-  'file:names_output.parquet' \
-  --schema names_schema.yaml \
+  'sqlite://names.db#names' \
+  'names_output.parquet' \
+  --schema-file names_schema.yaml \
   --preview 3
 echo ""
 
 echo "Step 4: Running full ETL from SQLite (with JSON) to Parquet..."
 ../../target/release/tinyetl \
-  'sqlite:names.db?table=names' \
-  'file:names_output.parquet' \
-  --schema names_schema.yaml
+  'sqlite://names.db#names' \
+  'names_output.parquet' \
+  --schema-file names_schema.yaml
 echo "✓ ETL completed"
 echo ""
 
@@ -54,15 +54,15 @@ if [ -f names_output.parquet ]; then
     echo "Command: ../../target/release/tinyetl 'file:names_output.parquet' 'file:verify_output.json' --preview 2"
     echo ""
     ../../target/release/tinyetl \
-      'file:names_output.parquet' \
-      'file:verify_output.json' \
+      'names_output.parquet' \
+      'verify_output.json' \
       --preview 2
     echo ""
     
     echo "Step 7: Converting Parquet back to JSON to verify JSON column..."
     ../../target/release/tinyetl \
-      'file:names_output.parquet' \
-      'file:verify_output.json'
+      'names_output.parquet' \
+      'verify_output.json'
     
     if [ -f verify_output.json ]; then
         echo "✓ JSON output created"

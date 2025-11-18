@@ -38,6 +38,9 @@ impl TransferEngine {
         let schema = if let Some(schema_file_path) = &config.schema_file {
             info!("→ Loading schema from file: {}", schema_file_path);
             let schema_file = SchemaFile::from_file(schema_file_path)?;
+            // Even when using a schema file, we need to initialize the source
+            // (e.g., for pagination state in SQLite)
+            let _ = source.infer_schema(1).await?;
             schema_file.to_schema()?
         } else {
             info!("→ Inferring schema from source...");
