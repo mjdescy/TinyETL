@@ -277,7 +277,16 @@ pub struct Column {
 impl Column {
     /// Convert to Arrow Field
     pub fn to_arrow_field(&self) -> Field {
-        Field::new(&self.name, self.data_type.to_arrow(), self.nullable)
+        let mut field = Field::new(&self.name, self.data_type.to_arrow(), self.nullable);
+        
+        // Add metadata for JSON type so we can preserve it when reading back from Parquet
+        if matches!(self.data_type, DataType::Json) {
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("tinyetl:type".to_string(), "json".to_string());
+            field = field.with_metadata(metadata);
+        }
+        
+        field
     }
     
     /// Convert from Arrow Field

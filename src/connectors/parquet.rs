@@ -36,8 +36,14 @@ impl ParquetSource {
         crate::schema::DataType::from_arrow(arrow_type)
     }
 
-    fn arrow_array_to_values(array: &dyn Array, column_name: &str) -> Result<Vec<(String, Value)>> {
+    fn arrow_array_to_values(array: &dyn Array, column_name: &str, field: &Field) -> Result<Vec<(String, Value)>> {
         let mut values = Vec::new();
+        
+        // Check if this is a JSON column based on metadata
+        let is_json = field.metadata()
+            .get("tinyetl:type")
+            .map(|s| s == "json")
+            .unwrap_or(false);
         
         match array.data_type() {
             DataType::Utf8 => {
@@ -45,6 +51,13 @@ impl ParquetSource {
                 .ok_or_else(|| TinyEtlError::DataTransfer("Failed to downcast to StringArray".to_string()))?;                for i in 0..string_array.len() {
                     let value = if string_array.is_null(i) {
                         Value::Null
+                    } else if is_json {
+                        // Parse the string as JSON
+                        let json_str = string_array.value(i);
+                        match serde_json::from_str(json_str) {
+                            Ok(json_val) => Value::Json(json_val),
+                            Err(_) => Value::String(json_str.to_string()),
+                        }
                     } else {
                         Value::String(string_array.value(i).to_string())
                     };
@@ -140,7 +153,7 @@ impl ParquetSource {
         let schema = batch.schema();
         for (col_index, field) in schema.fields().iter().enumerate() {
             let column = batch.column(col_index);
-            let column_values = Self::arrow_array_to_values(column.as_ref(), &field.name())?;
+            let column_values = Self::arrow_array_to_values(column.as_ref(), &field.name(), field)?;
             
             for (row_index, (column_name, value)) in column_values.into_iter().enumerate() {
                 if row_index < num_rows {
@@ -288,6 +301,7 @@ impl ParquetTarget {
                     for row in rows {
                         match row.get(column_name) {
                             Some(Value::String(s)) => builder.append_value(s),
+                            Some(Value::Json(j)) => builder.append_value(&j.to_string()),
                             Some(Value::Null) => builder.append_null(),
                             Some(other) => builder.append_value(&format!("{:?}", other)),
                             None => builder.append_null(),
