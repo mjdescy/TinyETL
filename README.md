@@ -921,6 +921,9 @@ This project is licensed under a modified Apache License 2.0 - see the [LICENSE]
 
 Commercial use is explicitly allowed with the exception of reselling TinyETL in a cloud SaaS format, please contact licensing@tinyetl.com for additional commercial licensing terms.
 
+### Contributors
+
+Special thanks to @mjdescy for contributing to TinyETL!
 
 ---
 
