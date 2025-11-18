@@ -1,30 +1,70 @@
 [
   {
-    "doc": "Json(Object {\"active\": Bool(true), \"age\": Number(30), \"city\": String(\"New York\"), \"tags\": Array [String(\"developer\"), String(\"manager\")]})",
+    "doc": {
+      "active": true,
+      "age": 30,
+      "city": "New York",
+      "tags": [
+        "developer",
+        "manager"
+      ]
+    },
     "id": "1",
     "name": "Alice Johnson",
     "url": "https://example.com/user1"
   },
   {
-    "doc": "Json(Object {\"active\": Bool(true), \"age\": Number(25), \"city\": String(\"San Francisco\"), \"tags\": Array [String(\"designer\"), String(\"frontend\")]})",
+    "doc": {
+      "active": true,
+      "age": 25,
+      "city": "San Francisco",
+      "tags": [
+        "designer",
+        "frontend"
+      ]
+    },
     "id": "2",
     "name": "Bob Smith",
     "url": "https://example.com/user2"
   },
   {
-    "doc": "Json(Object {\"active\": Bool(false), \"age\": Number(35), \"city\": String(\"Boston\"), \"tags\": Array [String(\"backend\"), String(\"architect\")]})",
+    "doc": {
+      "active": false,
+      "age": 35,
+      "city": "Boston",
+      "tags": [
+        "backend",
+        "architect"
+      ]
+    },
     "id": "3",
     "name": "Carol Davis",
     "url": "https://example.com/user3"
   },
   {
-    "doc": "Json(Object {\"active\": Bool(true), \"age\": Number(28), \"city\": String(\"Seattle\"), \"tags\": Array [String(\"devops\"), String(\"security\")]})",
+    "doc": {
+      "active": true,
+      "age": 28,
+      "city": "Seattle",
+      "tags": [
+        "devops",
+        "security"
+      ]
+    },
     "id": "4",
     "name": "David Wilson",
     "url": "https://example.com/user4"
   },
   {
-    "doc": "Json(Object {\"active\": Bool(true), \"age\": Number(32), \"city\": String(\"Austin\"), \"tags\": Array [String(\"data\"), String(\"analytics\")]})",
+    "doc": {
+      "active": true,
+      "age": 32,
+      "city": "Austin",
+      "tags": [
+        "data",
+        "analytics"
+      ]
+    },
     "id": "5",
     "name": "Eve Martinez",
     "url": "https://example.com/user5"
