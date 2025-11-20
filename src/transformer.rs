@@ -1,5 +1,6 @@
 use mlua::{Function, Lua, Table, Value as LuaValue};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{debug, warn};
 
@@ -9,15 +10,20 @@ use crate::{
 };
 
 /// Configuration for data transformation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", content = "value", rename_all = "lowercase")]
 pub enum TransformConfig {
     /// Path to a Lua file containing a transform function
+    #[serde(rename = "file")]
     File(String),
     /// Semicolon-separated inline expressions like "col1=row.old_col * 2; col2=row.name .. '_suffix'"
+    #[serde(rename = "inline")]
     Inline(String),
     /// Multi-line Lua script with individual assignments (for YAML configs)
+    #[serde(rename = "script")]
     Script(String),
     /// No transformation
+    #[serde(rename = "none")]
     None,
 }
 
@@ -474,8 +480,122 @@ impl Transformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{DataType, Value};
     use std::collections::HashMap;
+    use crate::schema::{DataType, Value};
+
+    #[test]
+    fn test_transform_config_none_yaml() {
+        let transform_config = TransformConfig::None;
+        let yaml = "type: none";
+
+        let serialized_transform_config = serde_yaml::to_string(&transform_config).unwrap();
+        assert_eq!(serialized_transform_config.trim(), yaml);
+
+        let deserialized_yaml: TransformConfig =
+            serde_yaml::from_str::<TransformConfig>(yaml).unwrap();
+        assert_eq!(deserialized_yaml, transform_config);
+
+        match deserialized_yaml {
+            TransformConfig::None => {}
+            _ => panic!("Expected None variant, got {:?}", deserialized_yaml),
+        }
+    }
+
+    #[test]
+    fn test_transform_config_file_yaml() {
+        let transform_config = TransformConfig::File("transform.lua".to_string());
+        let yaml = "type: file\nvalue: transform.lua";
+
+        let serialized_transform_config = serde_yaml::to_string(&transform_config).unwrap();
+        assert_eq!(serialized_transform_config.trim(), yaml);
+
+        let deserialized_yaml: TransformConfig =
+            serde_yaml::from_str::<TransformConfig>(yaml).unwrap();
+        assert_eq!(deserialized_yaml, transform_config);
+
+        match deserialized_yaml {
+            TransformConfig::File(path) => assert_eq!(path, "transform.lua"),
+            _ => panic!("Expected File variant, got {:?}", deserialized_yaml),
+        }
+    }
+
+    #[test]
+    fn test_transform_config_inline_yaml() {
+        let transform_config = TransformConfig::Inline("col1=row.x * 2".to_string());
+        let yaml = "type: inline\nvalue: col1=row.x * 2";
+
+        let serialized_transform_config = serde_yaml::to_string(&transform_config).unwrap();
+        assert_eq!(serialized_transform_config.trim(), yaml);
+
+        let deserialized_yaml: TransformConfig =
+            serde_yaml::from_str::<TransformConfig>(yaml).unwrap();
+        assert_eq!(deserialized_yaml, transform_config);
+
+        match deserialized_yaml {
+            TransformConfig::Inline(expr) => assert_eq!(expr, "col1=row.x * 2"),
+            _ => panic!("Expected Inline variant, got {:?}", deserialized_yaml),
+        }
+    }
+
+    #[test]
+    fn test_transform_config_script_yaml() {
+        let transform_config =
+            TransformConfig::Script("result = row.value * 2\nname = row.name".to_string());
+        let yaml = "type: script\nvalue: |-\n  result = row.value * 2\n  name = row.name";
+
+        let serialized_transform_config = serde_yaml::to_string(&transform_config).unwrap();
+        assert_eq!(serialized_transform_config.trim(), yaml);
+
+        let deserialized_yaml: TransformConfig =
+            serde_yaml::from_str::<TransformConfig>(yaml).unwrap();
+        assert_eq!(deserialized_yaml, transform_config);
+
+        match deserialized_yaml {
+            TransformConfig::Script(script) => {
+                assert!(script.contains("result = row.value * 2"));
+                assert!(script.contains("name = row.name"));
+            }
+            _ => panic!("Expected Script variant, got {:?}", deserialized_yaml),
+        }
+    }
+
+    #[test]
+    fn test_yaml_deserialize_examples() {
+        // Test realistic YAML formats
+        let none_yaml = "type: none";
+        let file_yaml = "type: file\nvalue: transform.lua";
+        let inline_yaml = "type: inline\nvalue: col1=row.x * 2";
+        let script_yaml = "type: script\nvalue: |\n  result = row.value * 2\n  name = row.name";
+
+        assert!(matches!(
+            serde_yaml::from_str::<TransformConfig>(none_yaml).unwrap(),
+            TransformConfig::None
+        ));
+
+        assert!(matches!(
+            serde_yaml::from_str::<TransformConfig>(file_yaml).unwrap(),
+            TransformConfig::File(_)
+        ));
+
+        assert!(matches!(
+            serde_yaml::from_str::<TransformConfig>(inline_yaml).unwrap(),
+            TransformConfig::Inline(_)
+        ));
+
+        assert!(matches!(
+            serde_yaml::from_str::<TransformConfig>(script_yaml).unwrap(),
+            TransformConfig::Script(_)
+        ));
+    }
+
+    #[test]
+    fn test_yaml_deserialize_errors() {
+        let invalid_type = "type: invalid";
+        let missing_field = "type: file";
+
+        assert!(serde_yaml::from_str::<TransformConfig>(invalid_type).is_err());
+        assert!(serde_yaml::from_str::<TransformConfig>(missing_field).is_err());
+    }
 
     #[test]
     fn test_no_transformation() {

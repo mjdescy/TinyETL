@@ -43,7 +43,6 @@ pub struct Config {
     pub log_level: LogLevel,
     pub skip_existing: bool,
     pub truncate: bool,
-    #[serde(skip)] // Skip serialization as TransformConfig doesn't implement Serialize
     pub transform: TransformConfig,
     pub source_type: Option<String>,
     pub source_secret_id: Option<String>,
