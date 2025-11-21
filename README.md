@@ -576,7 +576,7 @@ Create a YAML file defining your expected schema. Here's the complete format:
 
 **schema.yaml:**
 ```yaml
-fields:
+columns:
   - name: "id"
     type: "Integer"
     nullable: false
@@ -651,7 +651,7 @@ fields:
 
 **Customer Data Schema:**
 ```yaml
-fields:
+columns:
   - name: "customer_id"
     type: "Integer"
     nullable: false
@@ -688,7 +688,7 @@ fields:
 
 **Sales Data Schema:**
 ```yaml
-fields:
+columns:
   - name: "order_id"
     type: "Text"
     nullable: false
