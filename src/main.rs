@@ -5,7 +5,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use tinyetl::{
     cli::Cli,
     config::Config,
-    connectors::{create_source_from_url_with_type, create_target_from_url},
+    connectors::{create_source_from_url_with_type, create_target_from_url, Source, Target},
     secrets::process_connection_string,
     transfer::TransferEngine,
     yaml_config::YamlConfig,
@@ -13,13 +13,47 @@ use tinyetl::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments
     let cli = Cli::parse();
 
-    // Handle generate-config mode first
+    // handle generate-config subcommand
     if cli.is_generate_config_mode() {
-        // Extract config from the GenerateConfig subcommand
-        if let Some(tinyetl::cli::Commands::GenerateConfig {
+        return handle_generate_config(cli);
+    }
+
+    // load configuration either from YAML file or CLI arguments
+    let config = load_config(cli)?;
+    setup_logging(&config);
+
+    // execute the transfer
+    let (source, target) = create_connectors(&config).await?;
+    execute_transfer(&config, source, target).await?;
+
+    Ok(())
+}
+
+/// Handle the generate-config subcommand by converting CLI arguments to YAML config
+fn handle_generate_config(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(tinyetl::cli::Commands::GenerateConfig {
+        source,
+        target,
+        infer_schema,
+        schema_file,
+        batch_size,
+        preview,
+        dry_run,
+        log_level,
+        skip_existing,
+        truncate,
+        transform_file,
+        transform,
+        source_type,
+        source_secret_id,
+        dest_secret_id,
+    }) = cli.command
+    {
+        let transform_config = determine_transform_config(&transform_file, &transform);
+
+        let config = Config {
             source,
             target,
             infer_schema,
@@ -30,75 +64,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log_level,
             skip_existing,
             truncate,
-            transform_file,
-            transform,
+            transform: transform_config,
             source_type,
             source_secret_id,
             dest_secret_id,
-        }) = cli.command
-        {
-            // Determine transformation config
-            let transform_config = match (&transform_file, &transform) {
-                (Some(file), None) => tinyetl::transformer::TransformConfig::File(file.clone()),
-                (None, Some(expressions)) => {
-                    tinyetl::transformer::TransformConfig::Inline(expressions.clone())
-                }
-                (Some(file), Some(_)) => {
-                    eprintln!("Warning: Both --transform-file and --transform specified. Using --transform-file.");
-                    tinyetl::transformer::TransformConfig::File(file.clone())
-                }
-                (None, None) => tinyetl::transformer::TransformConfig::None,
-            };
+        };
 
-            let config = Config {
-                source,
-                target,
-                infer_schema,
-                schema_file,
-                batch_size,
-                preview,
-                dry_run,
-                log_level,
-                skip_existing,
-                truncate,
-                transform: transform_config,
-                source_type,
-                source_secret_id,
-                dest_secret_id,
-            };
-
-            // Convert Config to YamlConfig
-            let yaml_config = YamlConfig::from_config(config);
-
-            // Serialize to YAML and print to stdout
-            let yaml_string = yaml_config.to_yaml_string()?;
-            println!("{}", yaml_string);
-
-            return Ok(());
-        }
+        let yaml_config = YamlConfig::from_config(config);
+        let yaml_string = yaml_config.to_yaml_string()?;
+        println!("{}", yaml_string);
     }
 
-    // Determine if we're using config file or direct CLI args
-    let config: Config = if cli.is_config_mode() {
-        // Load config from YAML file
+    Ok(())
+}
+
+/// Determine the transformation configuration from CLI arguments
+fn determine_transform_config(
+    transform_file: &Option<String>,
+    transform: &Option<String>,
+) -> tinyetl::transformer::TransformConfig {
+    match (transform_file, transform) {
+        (Some(file), None) => tinyetl::transformer::TransformConfig::File(file.clone()),
+        (None, Some(expressions)) => {
+            tinyetl::transformer::TransformConfig::Inline(expressions.clone())
+        }
+        (Some(file), Some(_)) => {
+            eprintln!(
+                "Warning: Both --transform-file and --transform specified. Using --transform-file."
+            );
+            tinyetl::transformer::TransformConfig::File(file.clone())
+        }
+        (None, None) => tinyetl::transformer::TransformConfig::None,
+    }
+}
+
+/// Load configuration from either YAML file or CLI arguments
+fn load_config(cli: Cli) -> Result<Config, Box<dyn std::error::Error>> {
+    if cli.is_config_mode() {
         if let Some(config_file) = cli.get_config_file() {
             let yaml_config = YamlConfig::from_file(config_file)?;
-            yaml_config.into_config()?
+            yaml_config.into_config()
         } else {
-            return Err("No config file specified".into());
+            Err("No config file specified".into())
         }
     } else if cli.has_direct_params() {
-        // Use direct CLI parameters
-        cli.into()
+        Ok(cli.into())
     } else {
-        // Not using a subcommand and missing required arguments
-        return Err(
+        Err(
             "Error: SOURCE and TARGET are required.\n\nUsage: tinyetl <SOURCE> <TARGET> [OPTIONS]\n   or: tinyetl <COMMAND>\n\nFor more information, try '--help'".into(),
-        );
-    };
+        )
+    }
+}
 
-    // Initialize logging with specific module filtering
-    // Respect RUST_LOG environment variable if set, otherwise use config
+// Initialize logging with specific module filtering
+// Respect RUST_LOG environment variable if set, otherwise use config
+fn setup_logging(config: &Config) {
     let env_filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
@@ -113,8 +133,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     fmt().with_env_filter(env_filter).init();
+}
 
-    // Process connection strings to resolve secrets
+/// Create source and target connectors with secret processing
+async fn create_connectors(
+    config: &Config,
+) -> Result<(Box<dyn Source>, Box<dyn Target>), Box<dyn std::error::Error>> {
     let processed_source =
         process_connection_string(&config.source, config.source_secret_id.as_ref(), "source")?;
 
@@ -124,13 +148,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "destination",
     )?;
 
-    // Create source and target connectors
     let source =
         create_source_from_url_with_type(&processed_source, config.source_type.as_deref()).await?;
     let target = create_target_from_url(&processed_target).await?;
 
-    // Execute the transfer
-    match TransferEngine::execute(&config, source, target).await {
+    Ok((source, target))
+}
+
+/// Execute the data transfer and handle results
+async fn execute_transfer(
+    config: &Config,
+    source: Box<dyn Source>,
+    target: Box<dyn Target>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match TransferEngine::execute(config, source, target).await {
         Ok(stats) => {
             if !config.preview.is_some() && !config.dry_run {
                 info!("Transfer completed successfully!");
@@ -141,32 +172,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     stats.rows_per_second
                 );
             }
+            Ok(())
         }
         Err(e) => {
             error!("Transfer failed: {}", e);
             std::process::exit(1);
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
     use std::process::Command;
     use tempfile::NamedTempFile;
-
-    fn create_test_csv_file() -> Result<NamedTempFile, Box<dyn std::error::Error>> {
-        let mut temp_file = NamedTempFile::new()?;
-        writeln!(temp_file, "id,name,age")?;
-        writeln!(temp_file, "1,John,30")?;
-        writeln!(temp_file, "2,Jane,25")?;
-        temp_file.flush()?;
-        Ok(temp_file)
-    }
 
     #[test]
     fn test_main_function_exists() {
