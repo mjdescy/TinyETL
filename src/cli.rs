@@ -78,6 +78,8 @@ pub enum Commands {
         /// Path to the YAML configuration file
         config_file: String,
     },
+    /// Generate a default YAML configuration example and output to STDOUT
+    GenerateDefaultConfig,
     /// Generate a YAML configuration file from CLI arguments and output to STDOUT
     GenerateConfig {
         /// Source connection string (file path or connection string)
@@ -149,6 +151,11 @@ impl Cli {
     /// Check if this CLI call is for generating a config file
     pub fn is_generate_config_mode(&self) -> bool {
         matches!(self.command, Some(Commands::GenerateConfig { .. }))
+    }
+
+    /// Check if this CLI call is for generating a default config file
+    pub fn is_generate_default_config_mode(&self) -> bool {
+        matches!(self.command, Some(Commands::GenerateDefaultConfig))
     }
 
     /// Get the config file path if in config mode
@@ -318,5 +325,15 @@ mod tests {
 
         let config: Config = cli.into();
         assert_eq!(config.source_type, Some("json".to_string()));
+    }
+
+    #[test]
+    fn test_generate_default_config_parsing() {
+        let cli = Cli::try_parse_from(&["tinyetl", "generate-default-config"]).unwrap();
+
+        assert!(cli.is_generate_default_config_mode());
+        assert!(!cli.is_config_mode());
+        assert!(!cli.is_generate_config_mode());
+        assert!(!cli.has_direct_params());
     }
 }

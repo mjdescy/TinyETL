@@ -15,6 +15,11 @@ use tinyetl::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    // handle generate-default-config subcommand
+    if cli.is_generate_default_config_mode() {
+        return handle_generate_default_config();
+    }
+
     // handle generate-config subcommand
     if cli.is_generate_config_mode() {
         return handle_generate_config(cli);
@@ -75,6 +80,67 @@ fn handle_generate_config(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", yaml_string);
     }
 
+    Ok(())
+}
+
+/// Handle the generate-default-config subcommand by outputting the example config from README.md
+fn handle_generate_default_config() -> Result<(), Box<dyn std::error::Error>> {
+    let default_config = r#"# TinyETL Default Configuration Example
+# -------------------------------------
+#
+# This is a configuration file for TinyETL.
+# It is in YAML format.
+# Comments start with the '#' character and are ignored.
+# Blank lines are ignored.
+#
+# To use this configuration:
+# 1. Customize this configuration as needed.
+# 2. Save it as 'config.yaml' or with a similar name of your choosing.
+# 3. Use the configuration by running: `tinyetl run config.yaml`.
+#
+# You may generate a configuration file from CLI arguments using:
+# `tinyetl generate-config [OPTIONS] <SOURCE> <TARGET> > config.yaml`
+#
+# Use `${VAR_NAME}` syntax to insert dynamic values from environment variables.
+# For example, to use a database password from an environment variable:
+#   uri: "postgres://user:${DB_PASSWORD}@localhost:5432/dbname"
+
+version: 1
+
+source:
+  uri: "employees.csv"            # or database connection string
+
+target:
+  uri: "employees_output.json"    # or database connection string
+
+# The "options" key and all other keys beneath "options" can be omitted.
+# Sensible default values will be used for omitted keys.
+
+options:
+  batch_size: 10000               # Number of rows per batch
+  infer_schema: true              # Auto-detect column types
+  schema_file: "schema path.yaml" # Override with external schema
+  preview: 10                     # Show N rows without transfer
+  dry_run: false                  # Validate without transferring
+  log_level: info                 # info, warn, error (lowercase in YAML)
+  skip_existing: false            # Skip if target exists
+  source_type: "csv"              # Force source file type
+  truncate: false                 # Truncate target before writing
+  transform:                      # Inline Lua script transformation
+    type: script
+    value: |
+      -- Calculate derived fields
+      full_name = row.first_name .. " " .. row.last_name
+      annual_salary = row.monthly_salary * 12
+      hire_year = tonumber(string.sub(row.hire_date, 1, 4))
+
+# The "transform" key can also specify a Lua script file, as follows:
+#  transform:
+#    type: file
+#    value: "transform.lua"
+"#;
+
+    println!("{}", default_config);
     Ok(())
 }
 

@@ -128,14 +128,10 @@ tinyetl run my_etl_job.yaml
 
 ```
 Usage: tinyetl [OPTIONS] <SOURCE> <TARGET>
-       tinyetl run <CONFIG_FILE>
 
 Direct Transfer:
   <SOURCE>  Source connection string (file path or connection string)
   <TARGET>  Target connection string (file path or connection string)
-
-Config File Mode:
-  run <CONFIG_FILE>  Run ETL job from YAML configuration file
 
 Options:
       --infer-schema             Auto-detect columns and types
@@ -153,6 +149,13 @@ Options:
       --dest-secret-id <ID>      Secret ID for destination password (resolves to TINYETL_SECRET_{id})
   -h, --help                     Print help
   -V, --version                  Print version
+
+Config File Mode:
+  run <CONFIG_FILE>  Run ETL job from YAML configuration file
+  
+Config File Generation Modes:
+  generate-config [OPTIONS] <SOURCE> <TARGET>  Generate a YAML configuration file from CLI arguments and output to STDOUT
+  generate-default-config                      Generate a default YAML configuration example and output to STDOUT
 ```
 
 </div>
@@ -763,13 +766,33 @@ tinyetl run config.yaml
 ### Configuration File Format
 
 ```yaml
-        let yaml_str = r##"version: 1
+# This is a configuration file for TinyETL.
+# It is in YAML format.
+# Comments start with the '#' character and are ignored.
+# Blank lines are ignored.
+#
+# To use this configuration:
+# 1. Customize this configuration as needed.
+# 2. Save it as 'config.yaml' or with a similar name of your choosing.
+# 3. Use the configuration by running: `tinyetl run config.yaml`.
+#
+# You may generate a configuration file from CLI arguments using:
+# `tinyetl generate-config [OPTIONS] <SOURCE> <TARGET> > config.yaml`
+#
+# Use `${VAR_NAME}` syntax to insert dynamic values from environment variables.
+# For example, to use a database password from an environment variable:
+#   uri: "postgres://user:${DB_PASSWORD}@localhost:5432/dbname"
+
+version: 1
 
 source:
-  uri: "employees.csv"          # or database connection string
+  uri: "employees.csv"            # or database connection string
 
 target:
-  uri: "employees_output.json"  # or database connection string
+  uri: "employees_output.json"    # or database connection string
+
+# The "options" key and all other keys beneath "options" can be omitted.
+# Sensible default values will be used for omitted keys.
 
 options:
   batch_size: 10000               # Number of rows per batch
@@ -788,6 +811,11 @@ options:
       full_name = row.first_name .. " " .. row.last_name
       annual_salary = row.monthly_salary * 12
       hire_year = tonumber(string.sub(row.hire_date, 1, 4))
+
+# The "transform" key can also specify a Lua script file, as follows:
+#  transform:
+#    type: file
+#    value: "transform.lua"
 ```
 
 ### Environment Variables
@@ -847,17 +875,16 @@ options:
   transform:
     type: script
     value: |
-    -- Calculate order totals and profit margins
-    total_amount = row.quantity * row.unit_price
-    profit_margin = (total_amount - row.cost) / total_amount
-    order_year = tonumber(string.sub(row.order_date, 1, 4))
+      -- Calculate order totals and profit margins
+      total_amount = row.quantity * row.unit_price
+      profit_margin = (total_amount - row.cost) / total_amount
+      order_year = tonumber(string.sub(row.order_date, 1, 4))
 ```
 
 Run any configuration file with:
 ```bash
 tinyetl run my_job.yaml
 ```
-
 
 #### Command Examples
 
