@@ -702,7 +702,7 @@ impl Target for MssqlTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{Column, DataType, Schema, Value};
+    use crate::schema::{DataType, Value};
     use std::collections::HashMap;
 
     #[test]

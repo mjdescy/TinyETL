@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_basic_cli_parsing() {
-        let cli = Cli::try_parse_from(&["tinyetl", "source.csv", "target.db#table"]).unwrap();
+        let cli = Cli::try_parse_from(["tinyetl", "source.csv", "target.db#table"]).unwrap();
 
         assert_eq!(cli.source, Some("source.csv".to_string()));
         assert_eq!(cli.target, Some("target.db#table".to_string()));
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_config_file_parsing() {
-        let cli = Cli::try_parse_from(&["tinyetl", "run", "my_job.yaml"]).unwrap();
+        let cli = Cli::try_parse_from(["tinyetl", "run", "my_job.yaml"]).unwrap();
 
         assert!(cli.is_config_mode());
         assert_eq!(cli.get_config_file(), Some("my_job.yaml"));
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_cli_with_options() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "source.json",
             "target.csv",
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_cli_to_config_conversion() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "input.csv",
             "output.db#data",
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn test_missing_arguments() {
         // Should still work without source/target for subcommands
-        let result = Cli::try_parse_from(&["tinyetl"]);
+        let result = Cli::try_parse_from(["tinyetl"]);
         assert!(result.is_ok());
 
         // But should fail when trying to convert to Config without source/target
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_invalid_log_level() {
-        let result = Cli::try_parse_from(&[
+        let result = Cli::try_parse_from([
             "tinyetl",
             "source.csv",
             "target.db",
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_http_source_with_type() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "https://example.com/api/data",
             "output.csv",

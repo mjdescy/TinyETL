@@ -469,7 +469,7 @@ impl Transformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::Value;
+    use crate::schema::{DataType, Value};
     use std::collections::HashMap;
 
     #[test]
@@ -763,7 +763,6 @@ years_service = current_year - hire_year
     #[test]
     fn test_lua_file_transformation() {
         use std::fs;
-        use std::path::Path;
 
         // Create a temporary Lua file
         let lua_content = r#"

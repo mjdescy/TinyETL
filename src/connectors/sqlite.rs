@@ -453,7 +453,6 @@ impl Target for SqliteTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn test_sqlite_source_new() {

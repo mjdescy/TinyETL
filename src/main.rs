@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
+
     use std::io::Write;
     use std::process::Command;
     use tempfile::NamedTempFile;
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_cli_parsing() {
         // Test that Cli can be created from command line args
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "test.csv",      // positional source
             "test.db#table", // positional target
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_cli_to_config_conversion() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "input.csv",   // positional source
             "output.json", // positional target
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_cli_with_preview_option() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "test.csv",  // positional source
             "test.json", // positional target
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_cli_with_dry_run() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "test.csv",  // positional source
             "test.json", // positional target
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_cli_with_transform() {
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "tinyetl",
             "test.csv",  // positional source
             "test.json", // positional target
@@ -195,15 +195,15 @@ mod tests {
     fn test_cli_missing_required_args() {
         // With new subcommand structure, CLI parsing should succeed
         // but conversion to Config should handle validation
-        let result = Cli::try_parse_from(&["tinyetl", "only_target.json"]);
+        let result = Cli::try_parse_from(["tinyetl", "only_target.json"]);
         assert!(result.is_ok());
 
         // Should succeed parsing with no args (could be subcommand)
-        let result = Cli::try_parse_from(&["tinyetl"]);
+        let result = Cli::try_parse_from(["tinyetl"]);
         assert!(result.is_ok());
 
         // Test config file subcommand
-        let result = Cli::try_parse_from(&["tinyetl", "run", "config.yaml"]);
+        let result = Cli::try_parse_from(["tinyetl", "run", "config.yaml"]);
         assert!(result.is_ok());
         let cli = result.unwrap();
         assert!(cli.is_config_mode());
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn test_binary_help_command() {
         let output = Command::new("cargo")
-            .args(&["run", "--", "--help"])
+            .args(["run", "--", "--help"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output();
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_binary_missing_args() {
         let output = Command::new("cargo")
-            .args(&["run", "--"])
+            .args(["run", "--"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output();
 

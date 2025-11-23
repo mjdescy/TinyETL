@@ -833,7 +833,7 @@ mod tests {
 
     #[test]
     fn test_postgres_value_types() {
-        use chrono::{DateTime, Utc};
+        use chrono::Utc;
         use rust_decimal::Decimal;
         use std::collections::HashMap;
 

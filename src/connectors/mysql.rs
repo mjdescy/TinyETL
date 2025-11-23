@@ -589,8 +589,11 @@ impl Target for MysqlTarget {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crate::schema::Column;
+
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_connection_string_with_table() {
@@ -646,7 +649,7 @@ mod tests {
     #[test]
     fn test_batch_insert_sql_generation() {
         // Test that we can generate proper batch INSERT SQL
-        let columns = vec!["id".to_string(), "name".to_string(), "age".to_string()];
+        let columns = ["id".to_string(), "name".to_string(), "age".to_string()];
         let num_rows = 3;
         let num_columns = columns.len();
 
@@ -878,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_date_value_formatting() {
-        use chrono::{DateTime, Utc};
+        use chrono::DateTime;
 
         // Test date formatting for MySQL
         let datetime = DateTime::from_timestamp(1609459200, 0).unwrap();

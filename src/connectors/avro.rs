@@ -658,7 +658,7 @@ impl Target for AvroTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, Utc};
+    use chrono::DateTime;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
