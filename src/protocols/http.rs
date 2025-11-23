@@ -1,13 +1,10 @@
 use crate::{
-    connectors::{create_source, create_target, Source, Target},
+    connectors::{create_source, Source, Target},
     protocols::Protocol,
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
-use std::fs::File;
-use std::io::Cursor;
 use std::io::Write;
-use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use tracing::info;
 use url::Url;
@@ -15,6 +12,12 @@ use url::Url;
 /// HTTP/HTTPS protocol for downloading files from web servers.
 /// Downloads files to temporary locations and then uses existing connectors.
 pub struct HttpProtocol;
+
+impl Default for HttpProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HttpProtocol {
     pub fn new() -> Self {
@@ -68,16 +71,16 @@ impl HttpProtocol {
             tempfile::Builder::new()
                 .suffix(&format!(".{}", ext))
                 .tempfile()
-                .map_err(|e| TinyEtlError::Io(e))?
+                .map_err(TinyEtlError::Io)?
         } else {
-            tempfile::NamedTempFile::new().map_err(|e| TinyEtlError::Io(e))?
+            tempfile::NamedTempFile::new().map_err(TinyEtlError::Io)?
         };
 
         temp_file
             .write_all(&content)
-            .map_err(|e| TinyEtlError::Io(e))?;
+            .map_err(TinyEtlError::Io)?;
 
-        temp_file.flush().map_err(|e| TinyEtlError::Io(e))?;
+        temp_file.flush().map_err(TinyEtlError::Io)?;
 
         Ok(temp_file)
     }
@@ -85,9 +88,9 @@ impl HttpProtocol {
     /// Extract file extension from URL path for proper temporary file naming
     fn extract_extension_from_url(&self, url: &Url) -> Option<String> {
         let path = url.path();
-        if let Some(filename) = path.split('/').last() {
-            if let Some(extension) = filename.split('.').last() {
-                if extension.len() > 0 && extension.len() <= 10 && extension != filename {
+        if let Some(filename) = path.split('/').next_back() {
+            if let Some(extension) = filename.split('.').next_back() {
+                if !extension.is_empty() && extension.len() <= 10 && extension != filename {
                     return Some(extension.to_lowercase());
                 }
             }
@@ -130,7 +133,7 @@ impl Protocol for HttpProtocol {
         let persistent_path = temp_dir.join(file_name);
 
         // Copy the content to the persistent path
-        std::fs::copy(temp_file.path(), &persistent_path).map_err(|e| TinyEtlError::Io(e))?;
+        std::fs::copy(temp_file.path(), &persistent_path).map_err(TinyEtlError::Io)?;
 
         let final_path = persistent_path.to_string_lossy().to_string();
 

@@ -1,5 +1,5 @@
 use apache_avro::{
-    from_value, to_avro_datum, to_value, types::Value as AvroValue, Reader, Schema as AvroSchema,
+    types::Value as AvroValue, Reader, Schema as AvroSchema,
     Writer,
 };
 use async_trait::async_trait;
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Column, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{Column, DataType, Row, Schema, Value},
     Result, TinyEtlError,
 };
 
@@ -114,7 +114,7 @@ impl AvroSource {
                 // Convert array to JSON string for now
                 let json_values: std::result::Result<Vec<JsonValue>, _> = values
                     .iter()
-                    .map(|v| Self::avro_value_to_json_value(v))
+                    .map(Self::avro_value_to_json_value)
                     .collect();
                 match json_values {
                     Ok(vals) => Ok(Value::String(

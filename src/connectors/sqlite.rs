@@ -2,11 +2,10 @@ use async_trait::async_trait;
 use rust_decimal::Decimal;
 use sqlx::{sqlite::SqliteConnectOptions, Column, Row as SqlxRow, SqlitePool};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Column as SchemaColumn, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{Column as SchemaColumn, DataType, Row, Schema, Value},
     Result, TinyEtlError,
 };
 

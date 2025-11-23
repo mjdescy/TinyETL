@@ -3,12 +3,11 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde_json;
 use sqlx::{Column as SqlxColumn, MySqlPool, Row as SqlxRow, TypeInfo};
-use std::collections::HashMap;
 use url::Url;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Column, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{DataType, Row, Schema, SchemaInferer, Value},
     Result, TinyEtlError,
 };
 
@@ -39,10 +38,10 @@ impl MysqlSource {
         if let Some((db_part, table_part)) = connection_string.split_once('#') {
             Ok((db_part.to_string(), table_part.to_string()))
         } else {
-            return Err(TinyEtlError::Configuration(
+            Err(TinyEtlError::Configuration(
                 "MySQL source requires table specification: mysql://user:pass@host:port/db#table"
                     .to_string(),
-            ));
+            ))
         }
     }
 
@@ -208,7 +207,7 @@ impl Source for MysqlSource {
             let mut schema_row = Row::new();
             for column in row.columns() {
                 let col_name = column.name();
-                let value = self.extract_value(&row, column)?;
+                let value = self.extract_value(row, column)?;
                 schema_row.insert(col_name.to_string(), value);
             }
             schema_rows.push(schema_row);

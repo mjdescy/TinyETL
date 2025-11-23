@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use duckdb::{params, types::ValueRef, Appender, Connection};
+use duckdb::{types::ValueRef, Connection};
 use rust_decimal::Decimal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

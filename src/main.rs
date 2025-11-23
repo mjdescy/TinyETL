@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Execute the transfer
     match TransferEngine::execute(&config, source, target).await {
         Ok(stats) => {
-            if !config.preview.is_some() && !config.dry_run {
+            if config.preview.is_none() && !config.dry_run {
                 info!("Transfer completed successfully!");
                 info!(
                     "Processed {} rows in {:.2}s ({:.0} rows/sec)",

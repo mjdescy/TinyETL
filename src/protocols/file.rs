@@ -11,6 +11,12 @@ use url::Url;
 /// while providing the new protocol abstraction.
 pub struct FileProtocol;
 
+impl Default for FileProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileProtocol {
     pub fn new() -> Self {
         Self
@@ -27,7 +33,7 @@ impl FileProtocol {
         }
 
         // For file URLs, the path is what matters
-        let path = if let Some(path) = url.to_file_path().ok() {
+        let path = if let Ok(path) = url.to_file_path() {
             path.to_string_lossy().to_string()
         } else {
             // Fallback for URLs that don't convert to file paths cleanly

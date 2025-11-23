@@ -1,10 +1,8 @@
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDateTime, Utc};
 use odbc_api::{
     handles::ColumnDescription, Connection, ConnectionOptions, Cursor, Environment, IntoParameter,
     ResultSetMetadata,
 };
-use rust_decimal::Decimal;
 use std::sync::Arc;
 
 use crate::{

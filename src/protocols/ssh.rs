@@ -1,10 +1,9 @@
 use crate::{
-    connectors::{create_source, create_target, Source, Target},
+    connectors::{create_source, Source, Target},
     protocols::Protocol,
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
-use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
 use tracing::info;
@@ -13,6 +12,12 @@ use url::Url;
 /// SSH protocol for downloading files via SCP/SFTP.
 /// Uses system SSH client for file transfers to temporary locations.
 pub struct SshProtocol;
+
+impl Default for SshProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SshProtocol {
     pub fn new() -> Self {
@@ -49,9 +54,9 @@ impl SshProtocol {
             tempfile::Builder::new()
                 .suffix(&format!(".{}", ext))
                 .tempfile()
-                .map_err(|e| TinyEtlError::Io(e))?
+                .map_err(TinyEtlError::Io)?
         } else {
-            tempfile::NamedTempFile::new().map_err(|e| TinyEtlError::Io(e))?
+            tempfile::NamedTempFile::new().map_err(TinyEtlError::Io)?
         };
 
         let temp_path = temp_file.path().to_string_lossy().to_string();
@@ -147,9 +152,9 @@ impl SshProtocol {
 
     /// Extract file extension from remote path
     fn extract_extension_from_path(&self, path: &str) -> Option<String> {
-        if let Some(filename) = path.split('/').last() {
-            if let Some(extension) = filename.split('.').last() {
-                if extension.len() > 0 && extension.len() <= 10 && extension != filename {
+        if let Some(filename) = path.split('/').next_back() {
+            if let Some(extension) = filename.split('.').next_back() {
+                if !extension.is_empty() && extension.len() <= 10 && extension != filename {
                     return Some(extension.to_lowercase());
                 }
             }

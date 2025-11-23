@@ -1,12 +1,11 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use sqlx::{postgres::PgConnectOptions, Column, PgPool, Postgres, Row as SqlxRow};
+use sqlx::{postgres::PgConnectOptions, Column, PgPool, Row as SqlxRow};
 use std::str::FromStr;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Column as SchemaColumn, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{DataType, Row, Schema, SchemaInferer, Value},
     Result, TinyEtlError,
 };
 
@@ -113,7 +112,7 @@ impl Source for PostgresSource {
             let mut schema_row = Row::new();
             for column in row.columns() {
                 let col_name = column.name();
-                let value = self.extract_value(&row, column)?;
+                let value = self.extract_value(row, column)?;
                 schema_row.insert(col_name.to_string(), value);
             }
             schema_rows.push(schema_row);

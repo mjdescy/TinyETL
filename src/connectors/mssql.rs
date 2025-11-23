@@ -1,20 +1,19 @@
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use futures_util::stream::TryStreamExt;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::time::Duration;
-use tiberius::{AuthMethod, Client, Config, EncryptionLevel, QueryItem};
+use tiberius::{AuthMethod, Client, Config, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use url::Url;
-use uuid::Uuid;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Column, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{Column, DataType, Row, Schema, Value},
     Result, TinyEtlError,
 };
 

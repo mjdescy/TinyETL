@@ -3,7 +3,7 @@ use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
-use parquet::file::reader::{FileReader, SerializedFileReader};
+use parquet::file::reader::FileReader;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::{
     connectors::{Source, Target},
-    schema::{Row, Schema, SchemaInferer, Value},
+    schema::{Row, Schema, Value},
     Result, TinyEtlError,
 };
 
@@ -193,7 +193,7 @@ impl ParquetSource {
         let schema = batch.schema();
         for (col_index, field) in schema.fields().iter().enumerate() {
             let column = batch.column(col_index);
-            let column_values = Self::arrow_array_to_values(column.as_ref(), &field.name(), field)?;
+            let column_values = Self::arrow_array_to_values(column.as_ref(), field.name(), field)?;
 
             for (row_index, (column_name, value)) in column_values.into_iter().enumerate() {
                 if row_index < num_rows {
@@ -232,11 +232,11 @@ impl Source for ParquetSource {
         self.total_row_count = Some(total_rows);
 
         // Read all batches upfront
-        let mut batch_reader = builder.build().map_err(|e| {
+        let batch_reader = builder.build().map_err(|e| {
             TinyEtlError::DataTransfer(format!("Failed to create batch reader: {}", e))
         })?;
 
-        while let Some(batch_result) = batch_reader.next() {
+        for batch_result in batch_reader {
             let batch = batch_result
                 .map_err(|e| TinyEtlError::DataTransfer(format!("Failed to read batch: {}", e)))?;
             self.all_batches.push(batch);
@@ -351,9 +351,9 @@ impl ParquetTarget {
                     for row in rows {
                         match row.get(column_name) {
                             Some(Value::String(s)) => builder.append_value(s),
-                            Some(Value::Json(j)) => builder.append_value(&j.to_string()),
+                            Some(Value::Json(j)) => builder.append_value(j.to_string()),
                             Some(Value::Null) => builder.append_null(),
-                            Some(other) => builder.append_value(&format!("{:?}", other)),
+                            Some(other) => builder.append_value(format!("{:?}", other)),
                             None => builder.append_null(),
                         }
                     }
@@ -420,7 +420,7 @@ impl ParquetTarget {
                     for row in rows {
                         match row.get(column_name) {
                             Some(Value::Null) => builder.append_null(),
-                            Some(value) => builder.append_value(&format!("{:?}", value)),
+                            Some(value) => builder.append_value(format!("{:?}", value)),
                             None => builder.append_null(),
                         }
                     }

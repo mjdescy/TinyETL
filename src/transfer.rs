@@ -1,13 +1,13 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::{
     config::Config,
     connectors::{Source, Target},
     schema::{Schema, SchemaFile},
     transformer::Transformer,
-    Result, TinyEtlError,
+    Result,
 };
 
 pub struct TransferEngine;

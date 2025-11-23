@@ -1,16 +1,16 @@
 use mlua::{Function, Lua, Table, Value as LuaValue};
 use rust_decimal::Decimal;
-use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, warn};
 
 use crate::{
-    schema::{Column, DataType, Row, Schema, SchemaInferer, Value},
+    schema::{Column, Row, Schema, SchemaInferer, Value},
     Result, TinyEtlError,
 };
 
 /// Configuration for data transformation
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum TransformConfig {
     /// Path to a Lua file containing a transform function
     File(String),
@@ -19,14 +19,10 @@ pub enum TransformConfig {
     /// Multi-line Lua script with individual assignments (for YAML configs)
     Script(String),
     /// No transformation
+    #[default]
     None,
 }
 
-impl Default for TransformConfig {
-    fn default() -> Self {
-        TransformConfig::None
-    }
-}
 
 /// Row transformer using Lua scripting
 #[derive(Debug)]

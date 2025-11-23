@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::io::Write;
 use tempfile::NamedTempFile;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 use url::Url;
 
 use crate::{
@@ -30,6 +29,12 @@ pub struct SnowflakeConnection {
     pub warehouse: Option<String>,
     pub role: Option<String>,
     pub table: String,
+}
+
+impl Default for SnowflakeProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SnowflakeProtocol {
@@ -192,7 +197,7 @@ impl SnowflakeSource {
         );
 
         // Create temporary file
-        let temp_file = NamedTempFile::new().map_err(|e| TinyEtlError::Io(e))?;
+        let temp_file = NamedTempFile::new().map_err(TinyEtlError::Io)?;
 
         let temp_path = temp_file.path().to_string_lossy().to_string();
 
@@ -374,7 +379,7 @@ impl SnowflakeTarget {
     async fn setup_temp_target(&mut self) -> Result<()> {
         if self.parquet_target.is_none() {
             // Create temporary Parquet file
-            let temp_file = NamedTempFile::new().map_err(|e| TinyEtlError::Io(e))?;
+            let temp_file = NamedTempFile::new().map_err(TinyEtlError::Io)?;
 
             let temp_path = temp_file.path().to_string_lossy().to_string();
             let parquet_target = crate::connectors::parquet::ParquetTarget::new(&temp_path)?;

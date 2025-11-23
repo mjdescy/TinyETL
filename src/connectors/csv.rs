@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use crate::{
     connectors::{Source, Target},
     date_parser::DateParser,
-    schema::{Row, Schema, SchemaInferer, Value},
+    schema::{Row, Schema, Value},
     Result, TinyEtlError,
 };
 
@@ -317,13 +317,13 @@ impl Target for CsvTarget {
                     // Use schema-defined column order
                     self.column_order
                         .iter()
-                        .map(|key| row.get(key).map(|v| value_to_string(v)).unwrap_or_default())
+                        .map(|key| row.get(key).map(value_to_string).unwrap_or_default())
                         .collect()
                 } else {
                     // Fallback for when schema wasn't used (maintain old behavior)
                     let keys: Vec<_> = row.keys().cloned().collect();
                     keys.iter()
-                        .map(|key| row.get(key).map(|v| value_to_string(v)).unwrap_or_default())
+                        .map(|key| row.get(key).map(value_to_string).unwrap_or_default())
                         .collect()
                 };
 

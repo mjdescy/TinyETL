@@ -27,6 +27,7 @@ pub struct TargetConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct OptionsConfig {
     pub batch_size: Option<usize>,
     pub infer_schema: Option<bool>,
@@ -176,23 +177,6 @@ impl YamlConfig {
     }
 }
 
-impl Default for OptionsConfig {
-    fn default() -> Self {
-        Self {
-            batch_size: None,
-            infer_schema: None,
-            schema_file: None,
-            preview: None,
-            dry_run: None,
-            log_level: None,
-            skip_existing: None,
-            truncate: None,
-            transform: None,
-            transform_file: None,
-            source_type: None,
-        }
-    }
-}
 
 impl std::fmt::Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
