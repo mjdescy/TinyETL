@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2024-11-24
+
+### BREAKING CHANGES
+- **Transform Configuration Format**: YAML transform configuration now requires explicit `type` and `value` fields
+  - Old format: `transform: "expression"` or `transform_file: "file.lua"`
+  - New format: `transform: { type: inline, value: "expression" }` or `transform: { type: file, value: "file.lua" }`
+  - **Migration required** for existing YAML config files using transformations
+  - CLI arguments (`--transform`, `--transform-file`) remain unchanged and fully compatible
+
+### Added
+- **Config Generation Commands**: New `generate-config` and `generate-default-config` CLI subcommands for easier YAML configuration creation
+  - `tinyetl generate-config [OPTIONS] <SOURCE> <TARGET>` - Generate YAML config from CLI arguments
+  - `tinyetl generate-default-config` - Output example configuration with comments
+- **GitHub Actions PR Workflow**: Automated CI pipeline for pull requests with formatting, linting, and testing
+- **Enhanced Transform Config**: Improved YAML serialization for transformation configurations with tagged union format
+  - Supports `type: file`, `type: inline`, `type: script`, and `type: none` formats
+  - Better type safety and clarity in YAML configuration
+  - Explicit configuration prevents ambiguity
+
+### Changed
+- **Refactored Config Module**: Split YAML-specific configuration into separate `yaml_config.rs` module for better code organization
+- **Transform Config Structure**: Updated from string-based to enum-based with proper serde support for type-safe YAML serialization
+- **README Updates**: 
+  - Updated version badge to 0.9.0
+  - Updated binary size to 15MB
+  - Enhanced configuration documentation with inline comments and new transform format examples
+- **Code Quality**: Fixed numerous clippy warnings across the codebase for better maintainability
+  - Replaced `.last()` with `.next_back()` for iterator optimizations
+  - Added missing `#[allow(dead_code)]` attributes for test utilities
+  - Improved error handling and type conversions
+
+### Fixed
+- Compiler warnings and clippy lints throughout the codebase
+- Inconsistent formatting in various modules
+- Missing or incomplete error messages in configuration parsing
+
+### Documentation
+- Added comprehensive inline comments to default configuration example
+- Improved YAML configuration format documentation with all options explained
+- Added examples for environment variable usage in configurations
+- Updated command-line help text with new subcommands
+- Enhanced README with new transform configuration format
+
+### Internal
+- Extracted YAML configuration logic into dedicated module for better separation of concerns
+- Improved test coverage for configuration serialization/deserialization
+- Enhanced type safety in transform configuration handling
+
 ## [0.8.0] - 2025-11-18
 
 ### Added
