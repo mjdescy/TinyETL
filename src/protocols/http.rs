@@ -25,20 +25,6 @@ impl HttpProtocol {
         Self
     }
 
-    /// Download a file from an HTTP/HTTPS URL to a temporary file
-    #[allow(dead_code)]
-    async fn download_to_temp(&self, url: &Url) -> Result<NamedTempFile> {
-        self.download_to_temp_with_type_and_options(url, None, &HashMap::new()).await
-    }
-
-    /// Download a file from an HTTP/HTTPS URL to a temporary file with optional type hint
-    async fn download_to_temp_with_type(
-        &self,
-        url: &Url,
-        source_type: Option<&str>,
-    ) -> Result<NamedTempFile> {
-        self.download_to_temp_with_type_and_options(url, source_type, &HashMap::new()).await
-    }
 
     /// Download a file from an HTTP/HTTPS URL to a temporary file with optional type hint and options
     async fn download_to_temp_with_type_and_options(

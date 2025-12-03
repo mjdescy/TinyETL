@@ -153,6 +153,7 @@ echo "         auth.basic.password: \"\${API_PASSWORD}\""
 echo ""
 echo "Clean up outputs:"
 echo "  rm output_*.json"
+rm -f output_*.json
 echo ""
 echo -e "${GREEN}✓ Example completed successfully!${NC}"
 echo ""
