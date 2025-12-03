@@ -1,0 +1,19 @@
+# Example: HTTP Source with Custom Headers
+# This example demonstrates custom header validation
+# Start the server with: docker-compose up -d http-server (from test_env/)
+version: 1
+
+source:
+  uri: "http://localhost:8680/custom-headers/data.csv"
+  options:
+    # Custom headers - the server validates these
+    header.X-API-Version: "v2"
+    header.User-Agent: "TinyETL/0.9.0"
+    header.Accept: "text/csv"
+
+target:
+  uri: "output_custom_headers.json"
+
+options:
+  batch_size: 100
+  log_level: info

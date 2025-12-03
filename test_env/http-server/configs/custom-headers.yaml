@@ -1,0 +1,17 @@
+# Test: HTTP endpoint with Custom Headers
+version: 1
+
+source:
+  uri: "http://localhost:8080/custom-headers/data.csv"
+  options:
+    header.X-API-Version: "v2"
+    header.User-Agent: "TinyETL/0.9.0"
+    header.Accept: "text/csv"
+
+target:
+  uri: "output_custom_headers.json"
+  options: {}
+
+options:
+  batch_size: 100
+  log_level: info

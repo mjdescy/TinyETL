@@ -1,14 +1,15 @@
 # TinyETL Test Environment
 
-This Docker Compose setup provides PostgreSQL, MySQL, and MongoDB instances for testing TinyETL functionality.
+This Docker Compose setup provides database and HTTP server instances for testing TinyETL functionality.
 
 ## Services
 
-| Service   | Port  | Database | Username | Password |
-|-----------|-------|----------|----------|----------|
-| PostgreSQL| 5432  | testdb   | testuser | testpass |
-| MySQL     | 3306  | testdb   | testuser | testpass |
-| MongoDB   | 27017 | testdb   | testuser | testpass |
+| Service     | Port  | Database/Purpose | Username | Password/Token |
+|-------------|-------|------------------|----------|----------------|
+| PostgreSQL  | 5432  | testdb           | testuser | testpass |
+| MySQL       | 3306  | testdb           | testuser | testpass |
+| MongoDB     | 27017 | testdb           | testuser | testpass |
+| HTTP Server | 8080  | Test API         | testuser | testpass / test-bearer-token-12345 |
 
 ## Quick Start
 
@@ -90,6 +91,27 @@ cargo run -- examples/07_csv_to_mysql/customers.csv "mysql://testuser:testpass@l
 # Actual data transfer (remove --dry-run)
 cargo run -- examples/05_csv_to_sqlite/employees.csv "postgres://testuser:testpass@localhost:5432/testdb#test_employees"
 ```
+
+## HTTP Server for Protocol Testing
+
+The HTTP server provides endpoints for testing TinyETL's HTTP protocol with various authentication methods:
+
+```bash
+# Start the HTTP server
+docker-compose up -d http-server
+
+# Run automated tests
+cd http-server
+./test.sh
+
+# Test endpoints manually
+curl http://localhost:8080/health
+curl http://localhost:8080/public/data.csv
+curl -u testuser:testpass http://localhost:8080/basic-auth/users.csv
+curl -H "Authorization: Bearer test-bearer-token-12345" http://localhost:8080/bearer-auth/products.csv
+```
+
+See [`http-server/README.md`](http-server/README.md) for detailed documentation.
 
 ## Troubleshooting
 

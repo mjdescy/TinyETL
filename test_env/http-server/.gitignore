@@ -1,0 +1,7 @@
+# Ignore output files
+output_*.json
+output_*.csv
+*.tmp
+
+# Ignore any downloaded data
+downloads/

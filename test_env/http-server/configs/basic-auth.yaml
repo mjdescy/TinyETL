@@ -1,0 +1,16 @@
+# Test: HTTP endpoint with Basic Authentication
+version: 1
+
+source:
+  uri: "http://localhost:8080/basic-auth/users.csv"
+  options:
+    auth.basic.username: "testuser"
+    auth.basic.password: "testpass"
+
+target:
+  uri: "output_basic_auth.json"
+  options: {}
+
+options:
+  batch_size: 100
+  log_level: info

@@ -1,0 +1,14 @@
+# Test: Public HTTP endpoint (no authentication)
+version: 1
+
+source:
+  uri: "http://localhost:8080/public/data.csv"
+  options: {}
+
+target:
+  uri: "output_public.json"
+  options: {}
+
+options:
+  batch_size: 100
+  log_level: info

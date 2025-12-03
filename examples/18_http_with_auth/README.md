@@ -1,13 +1,26 @@
 # Example 18: HTTP Source with Custom Headers and Authentication
 
-This example demonstrates how to download data from HTTP/HTTPS endpoints with custom headers and authentication in TinyETL.
+This example demonstrates how to download data from HTTP/HTTPS endpoints with custom headers and authentication in TinyETL using the local test HTTP server.
 
 ## What This Example Shows
 
-1. **Custom HTTP Headers**: How to add custom headers to HTTP requests
-2. **Basic Authentication**: Using username/password authentication
-3. **Bearer Token Authentication**: Using token-based authentication
-4. **Environment Variable Support**: Securely passing credentials via environment variables
+1. **Public Endpoints**: Downloading from public HTTP endpoints
+2. **Custom HTTP Headers**: Adding custom headers to HTTP requests
+3. **Basic Authentication**: Using username/password authentication
+4. **Bearer Token Authentication**: Using token-based authentication
+
+## Prerequisites
+
+This example requires the HTTP test server to be running:
+
+```bash
+# From the test_env directory
+cd ../../test_env
+docker-compose up -d http-server
+
+# Verify it's running
+curl http://localhost:8080/health
+```
 
 ## Protocol Options
 
@@ -16,47 +29,129 @@ TinyETL supports the following options for HTTP/HTTPS sources:
 | Option | Description | Example |
 |--------|-------------|---------|
 | `header.<name>` | Custom HTTP header | `header.User-Agent: "TinyETL/0.9.0"` |
-| `auth.basic.username` | Basic auth username | `auth.basic.username: "${API_USERNAME}"` |
-| `auth.basic.password` | Basic auth password | `auth.basic.password: "${API_PASSWORD}"` |
-| `auth.bearer` | Bearer token | `auth.bearer: "${API_TOKEN}"` |
+| `auth.basic.username` | Basic auth username | `auth.basic.username: "testuser"` |
+| `auth.basic.password` | Basic auth password | `auth.basic.password: "testpass"` |
+| `auth.bearer` | Bearer token | `auth.bearer: "test-bearer-token-12345"` |
 
-## Configuration Example
+## Available Configurations
+
+### 1. Public Endpoint (No Authentication)
+**File**: `public_config.yaml`
+
+Downloads from a public endpoint that requires no authentication.
 
 ```yaml
 version: 1
-
 source:
-  uri: "https://api.example.com/data/export.csv"
+  uri: "http://localhost:8080/public/data.csv"
   options:
-    # Custom headers
     header.User-Agent: "TinyETL/0.9.0"
-    header.Accept: "text/csv"
-    header.X-API-Version: "v2"
-    
-    # Basic authentication
-    auth.basic.username: "${API_USERNAME}"
-    auth.basic.password: "${API_PASSWORD}"
-
 target:
-  uri: "output.csv"
-  options: {}
+  uri: "output_public.json"
+```
 
-options:
-  batch_size: 1000
-  log_level: info
+### 2. Basic Authentication
+**File**: `config.yaml`
+
+Downloads using HTTP Basic Authentication.
+
+```yaml
+version: 1
+source:
+  uri: "http://localhost:8080/basic-auth/users.csv"
+  options:
+    auth.basic.username: "testuser"
+    auth.basic.password: "testpass"
+target:
+  uri: "output_basic_auth.json"
+```
+
+### 3. Bearer Token Authentication
+**File**: `bearer_config.yaml`
+
+Downloads using Bearer Token authentication.
+
+```yaml
+version: 1
+source:
+  uri: "http://localhost:8080/bearer-auth/products.csv"
+  options:
+    auth.bearer: "test-bearer-token-12345"
+target:
+  uri: "output_bearer_auth.json"
+```
+
+### 4. Custom Headers Validation
+**File**: `custom_headers_config.yaml`
+
+Downloads from an endpoint that validates specific headers.
+
+```yaml
+version: 1
+source:
+  uri: "http://localhost:8080/custom-headers/data.csv"
+  options:
+    header.X-API-Version: "v2"
+    header.User-Agent: "TinyETL/0.9.0"
+target:
+  uri: "output_custom_headers.json"
 ```
 
 ## Running the Example
 
-### Test with Public Data (No Authentication)
+### Run All Tests
 
 ```bash
 ./run.sh
 ```
 
-This will download sample data from a public CSV source to demonstrate the HTTP protocol with custom headers.
+This will:
+1. Check if the HTTP server is running
+2. Test public endpoint (no auth)
+3. Test Basic Authentication
+4. Test Bearer Token Authentication
+5. Test Custom Headers validation
 
-### With Basic Authentication
+### Run Individual Configurations
+
+```bash
+# Public endpoint
+tinyetl run public_config.yaml
+
+# Basic authentication
+tinyetl run config.yaml
+
+# Bearer token
+tinyetl run bearer_config.yaml
+
+# Custom headers
+tinyetl run custom_headers_config.yaml
+```
+
+## Test Server Endpoints
+
+The HTTP test server provides these endpoints:
+
+| Endpoint | Authentication | Data |
+|----------|----------------|------|
+| `/public/data.csv` | None | User data CSV |
+| `/basic-auth/users.csv` | Basic Auth | User data CSV |
+| `/bearer-auth/products.csv` | Bearer Token | Products CSV |
+| `/custom-headers/data.csv` | Header validation | User data CSV |
+
+## For Real-World Usage
+
+When using with external APIs, follow these patterns:
+
+### With Environment Variables (Recommended)
+
+```yaml
+source:
+  uri: "https://api.example.com/data.csv"
+  options:
+    auth.basic.username: "${API_USERNAME}"
+    auth.basic.password: "${API_PASSWORD}"
+```
 
 ```bash
 export API_USERNAME=your_username
@@ -66,16 +161,13 @@ tinyetl run config.yaml
 
 ### With Bearer Token
 
-First, update your `config.yaml` to use bearer token:
-
 ```yaml
 source:
-  uri: "https://api.example.com/data"
+  uri: "https://api.example.com/data.json"
   options:
     auth.bearer: "${API_TOKEN}"
+    header.Accept: "application/json"
 ```
-
-Then run:
 
 ```bash
 export API_TOKEN=your_token_here
@@ -84,10 +176,11 @@ tinyetl run config.yaml
 
 ## Security Best Practices
 
-1. **Never hardcode credentials** in configuration files
-2. **Use environment variables** for sensitive data
-3. **Keep config files** out of version control if they contain sensitive information
-4. **Use `.gitignore`** to exclude files with credentials
+1. ✅ **Use environment variables** for credentials
+2. ✅ **Never commit credentials** to version control
+3. ✅ **Use HTTPS** for production endpoints
+4. ✅ **Rotate tokens regularly** for bearer authentication
+5. ✅ **Add `.env` files to `.gitignore`**
 
 ## Common Use Cases
 
@@ -97,17 +190,32 @@ tinyetl run config.yaml
 - **Data Feeds**: Subscribe to authenticated data feeds
 - **Internal APIs**: Access internal company APIs with authentication
 
-## Error Handling
+## Troubleshooting
 
-If you encounter authentication errors:
+### Server Not Running
+```bash
+cd ../../test_env
+docker-compose up -d http-server
+docker-compose logs http-server
+```
 
-- Verify your credentials are correct
-- Check if the API requires specific headers
-- Ensure environment variables are set
-- Check the API documentation for authentication requirements
+### Authentication Failures
+```bash
+# Test endpoints manually
+curl http://localhost:8080/health
+curl -u testuser:testpass http://localhost:8080/basic-auth/users.csv
+curl -H "Authorization: Bearer test-bearer-token-12345" \
+     http://localhost:8080/bearer-auth/products.csv
+```
+
+### Clean Up
+```bash
+rm output_*.json
+```
 
 ## Notes
 
 - HTTP targets (uploading) are not currently supported
 - File downloads are cached temporarily during processing
-- Large files are downloaded completely before processing begins
+- The test server runs on `localhost:8080`
+- All test credentials are in plain text (for testing only)

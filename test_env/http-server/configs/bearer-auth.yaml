@@ -1,0 +1,15 @@
+# Test: HTTP endpoint with Bearer Token Authentication
+version: 1
+
+source:
+  uri: "http://localhost:8080/bearer-auth/products.csv"
+  options:
+    auth.bearer: "test-bearer-token-12345"
+
+target:
+  uri: "output_bearer_auth.json"
+  options: {}
+
+options:
+  batch_size: 100
+  log_level: info

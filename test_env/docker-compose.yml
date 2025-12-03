@@ -83,6 +83,25 @@ services:
       retries: 5
       start_period: 90s
 
+  http-server:
+    build:
+      context: ./http-server
+      dockerfile: Dockerfile
+    container_name: tinyetl-http-server
+    environment:
+      BASIC_AUTH_USERNAME: testuser
+      BASIC_AUTH_PASSWORD: testpass
+      BEARER_TOKEN: test-bearer-token-12345
+    ports:
+      - "8680:8680"
+    volumes:
+      - ./http-server/data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8680/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
   mysql_data:

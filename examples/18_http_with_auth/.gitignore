@@ -1,0 +1,7 @@
+# Output files
+output_*.json
+output_*.csv
+
+# Test outputs
+test_output.*
+test_config.yaml
