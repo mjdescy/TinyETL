@@ -1,0 +1,21 @@
+# Example: HTTP Source with Bearer Token Authentication
+# Use this configuration when your API requires a bearer token
+version: 1
+
+source:
+  uri: "https://api.example.com/v1/data.json"
+  options:
+    # Custom headers
+    header.User-Agent: "TinyETL/0.9.0"
+    header.Accept: "application/json"
+    
+    # Bearer token authentication
+    auth.bearer: "${API_TOKEN}"
+
+target:
+  uri: "output.json"
+  options: {}
+
+options:
+  batch_size: 1000
+  log_level: info

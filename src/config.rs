@@ -1,5 +1,6 @@
 use crate::transformer::TransformConfig;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -17,6 +18,8 @@ pub struct Config {
     pub source_type: Option<String>,
     pub source_secret_id: Option<String>,
     pub dest_secret_id: Option<String>,
+    pub source_options: HashMap<String, String>,
+    pub target_options: HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -36,6 +39,8 @@ impl Default for Config {
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         }
     }
 }

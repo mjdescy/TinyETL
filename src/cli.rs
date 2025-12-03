@@ -205,6 +205,8 @@ impl From<Cli> for Config {
             source_type: cli.source_type,
             source_secret_id: cli.source_secret_id,
             dest_secret_id: cli.dest_secret_id,
+            source_options: std::collections::HashMap::new(), // CLI doesn't support options yet
+            target_options: std::collections::HashMap::new(), // CLI doesn't support options yet
         }
     }
 }

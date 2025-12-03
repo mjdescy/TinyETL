@@ -4,6 +4,7 @@ use crate::{
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use url::Url;
 
 /// File protocol for local file system operations.
@@ -53,12 +54,24 @@ impl FileProtocol {
 
 #[async_trait]
 impl Protocol for FileProtocol {
-    async fn create_source(&self, url: &Url) -> Result<Box<dyn Source>> {
+    async fn create_source(
+        &self, 
+        url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Source>> {
+        // File protocol doesn't use options currently, but could be extended
+        // for future features like compression, encoding, etc.
         let path = self.url_to_path(url)?;
         create_source(&path)
     }
 
-    async fn create_target(&self, url: &Url) -> Result<Box<dyn Target>> {
+    async fn create_target(
+        &self, 
+        url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Target>> {
+        // File protocol doesn't use options currently, but could be extended
+        // for future features like compression, encoding, etc.
         let path = self.url_to_path(url)?;
         create_target(&path)
     }
@@ -125,9 +138,10 @@ mod tests {
     async fn test_create_csv_source() {
         let protocol = FileProtocol::new();
         let url = Url::parse("file:///test.csv").unwrap();
+        let options = std::collections::HashMap::new();
 
         // This will fail because the file doesn't exist, but it tests the factory logic
-        let result = protocol.create_source(&url).await;
+        let result = protocol.create_source(&url, &options).await;
         // Should create a CSV source but fail to open the non-existent file
         assert!(result.is_ok());
     }
@@ -136,8 +150,9 @@ mod tests {
     async fn test_create_json_target() {
         let protocol = FileProtocol::new();
         let url = Url::parse("file:///output.json").unwrap();
+        let options = std::collections::HashMap::new();
 
-        let result = protocol.create_target(&url).await;
+        let result = protocol.create_target(&url, &options).await;
         assert!(result.is_ok());
     }
 }

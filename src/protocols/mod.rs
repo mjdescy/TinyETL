@@ -8,6 +8,7 @@ use crate::{
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use url::Url;
 
 /// Protocol trait that abstracts the transport layer from the data format layer.
@@ -16,20 +17,29 @@ use url::Url;
 #[async_trait]
 pub trait Protocol: Send + Sync {
     /// Create a source connector for reading data from this protocol
-    async fn create_source(&self, url: &Url) -> Result<Box<dyn Source>>;
+    async fn create_source(
+        &self, 
+        url: &Url,
+        options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Source>>;
 
     /// Create a source connector with a type hint (useful for HTTP/remote sources)
     async fn create_source_with_type(
         &self,
         url: &Url,
         _source_type: Option<&str>,
+        options: &HashMap<String, String>,
     ) -> Result<Box<dyn Source>> {
         // Default implementation ignores the type hint
-        self.create_source(url).await
+        self.create_source(url, options).await
     }
 
     /// Create a target connector for writing data to this protocol  
-    async fn create_target(&self, url: &Url) -> Result<Box<dyn Target>>;
+    async fn create_target(
+        &self, 
+        url: &Url,
+        options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Target>>;
 
     /// Validate that the URL is properly formatted for this protocol
     fn validate_url(&self, url: &Url) -> Result<()>;
@@ -63,13 +73,14 @@ pub fn create_protocol(url: &str) -> Result<Box<dyn Protocol>> {
 
 /// Helper function to create source using protocol abstraction
 pub async fn create_source_from_url(url: &str) -> Result<Box<dyn Source>> {
-    create_source_from_url_with_type(url, None).await
+    create_source_from_url_with_type(url, None, &HashMap::new()).await
 }
 
 /// Helper function to create source using protocol abstraction with optional type hint
 pub async fn create_source_from_url_with_type(
     url: &str,
     source_type: Option<&str>,
+    options: &HashMap<String, String>,
 ) -> Result<Box<dyn Source>> {
     let protocol = create_protocol(url)?;
     let parsed_url = if url.contains("://") {
@@ -84,12 +95,20 @@ pub async fn create_source_from_url_with_type(
 
     protocol.validate_url(&parsed_url)?;
     protocol
-        .create_source_with_type(&parsed_url, source_type)
+        .create_source_with_type(&parsed_url, source_type, options)
         .await
 }
 
 /// Helper function to create target using protocol abstraction
 pub async fn create_target_from_url(url: &str) -> Result<Box<dyn Target>> {
+    create_target_from_url_with_options(url, &HashMap::new()).await
+}
+
+/// Helper function to create target using protocol abstraction with options
+pub async fn create_target_from_url_with_options(
+    url: &str,
+    options: &HashMap<String, String>,
+) -> Result<Box<dyn Target>> {
     let protocol = create_protocol(url)?;
     let parsed_url = if url.contains("://") {
         Url::parse(url)
@@ -102,7 +121,7 @@ pub async fn create_target_from_url(url: &str) -> Result<Box<dyn Target>> {
     };
 
     protocol.validate_url(&parsed_url)?;
-    protocol.create_target(&parsed_url).await
+    protocol.create_target(&parsed_url, options).await
 }
 
 #[cfg(test)]

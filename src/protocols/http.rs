@@ -4,6 +4,7 @@ use crate::{
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::io::Write;
 use tempfile::NamedTempFile;
 use tracing::info;
@@ -27,7 +28,7 @@ impl HttpProtocol {
     /// Download a file from an HTTP/HTTPS URL to a temporary file
     #[allow(dead_code)]
     async fn download_to_temp(&self, url: &Url) -> Result<NamedTempFile> {
-        self.download_to_temp_with_type(url, None).await
+        self.download_to_temp_with_type_and_options(url, None, &HashMap::new()).await
     }
 
     /// Download a file from an HTTP/HTTPS URL to a temporary file with optional type hint
@@ -36,14 +37,50 @@ impl HttpProtocol {
         url: &Url,
         source_type: Option<&str>,
     ) -> Result<NamedTempFile> {
+        self.download_to_temp_with_type_and_options(url, source_type, &HashMap::new()).await
+    }
+
+    /// Download a file from an HTTP/HTTPS URL to a temporary file with optional type hint and options
+    async fn download_to_temp_with_type_and_options(
+        &self,
+        url: &Url,
+        source_type: Option<&str>,
+        options: &HashMap<String, String>,
+    ) -> Result<NamedTempFile> {
         let client = reqwest::Client::new();
 
         info!("Downloading from HTTP URL: {}", url);
 
-        let response =
-            client.get(url.as_str()).send().await.map_err(|e| {
-                TinyEtlError::Connection(format!("Failed to fetch URL {}: {}", url, e))
-            })?;
+        // Build the request with optional headers and authentication
+        let mut request = client.get(url.as_str());
+
+        // Apply custom headers if provided
+        // Headers should be provided as header.HeaderName=value
+        for (key, value) in options {
+            if let Some(header_name) = key.strip_prefix("header.") {
+                info!("Adding custom header: {}", header_name);
+                request = request.header(header_name, value);
+            }
+        }
+
+        // Apply basic authentication if provided
+        if let (Some(username), Some(password)) = (
+            options.get("auth.basic.username"),
+            options.get("auth.basic.password"),
+        ) {
+            info!("Using basic authentication");
+            request = request.basic_auth(username, Some(password));
+        }
+
+        // Apply bearer token if provided
+        if let Some(token) = options.get("auth.bearer") {
+            info!("Using bearer token authentication");
+            request = request.bearer_auth(token);
+        }
+
+        let response = request.send().await.map_err(|e| {
+            TinyEtlError::Connection(format!("Failed to fetch URL {}: {}", url, e))
+        })?;
 
         if !response.status().is_success() {
             return Err(TinyEtlError::Connection(format!(
@@ -109,17 +146,22 @@ impl HttpProtocol {
 
 #[async_trait]
 impl Protocol for HttpProtocol {
-    async fn create_source(&self, url: &Url) -> Result<Box<dyn Source>> {
-        self.create_source_with_type(url, None).await
+    async fn create_source(
+        &self, 
+        url: &Url,
+        options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Source>> {
+        self.create_source_with_type(url, None, options).await
     }
 
     async fn create_source_with_type(
         &self,
         url: &Url,
         source_type: Option<&str>,
+        options: &HashMap<String, String>,
     ) -> Result<Box<dyn Source>> {
         // Download the file to a temporary location
-        let temp_file = self.download_to_temp_with_type(url, source_type).await?;
+        let temp_file = self.download_to_temp_with_type_and_options(url, source_type, options).await?;
 
         // Create a persistent temporary file in the system temp directory
         let extension = self.get_file_extension(url, source_type);
@@ -142,7 +184,11 @@ impl Protocol for HttpProtocol {
         create_source(&final_path)
     }
 
-    async fn create_target(&self, _url: &Url) -> Result<Box<dyn Target>> {
+    async fn create_target(
+        &self, 
+        _url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Target>> {
         // HTTP protocol doesn't support writing/uploading files in this implementation
         // This would require additional authentication and upload mechanisms
         Err(TinyEtlError::Configuration(
@@ -237,10 +283,11 @@ mod tests {
     fn test_target_not_supported() {
         let protocol = HttpProtocol::new();
         let url = Url::parse("https://example.com/upload").unwrap();
+        let options = std::collections::HashMap::new();
 
         // HTTP protocol should not support target operations
         tokio_test::block_on(async {
-            let result = protocol.create_target(&url).await;
+            let result = protocol.create_target(&url, &options).await;
             assert!(result.is_err());
         });
     }

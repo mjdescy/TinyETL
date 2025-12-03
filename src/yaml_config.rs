@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::config::{Config, LogLevel};
 use crate::transformer::TransformConfig;
@@ -17,6 +18,8 @@ pub struct YamlConfig {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SourceOrTargetConfig {
     pub uri: String,
+    #[serde(default)]
+    pub options: HashMap<String, String>,
 }
 
 /// YAML config for options
@@ -45,8 +48,14 @@ impl YamlConfig {
     pub fn from_config(config: Config) -> Self {
         YamlConfig {
             version: 1,
-            source: SourceOrTargetConfig { uri: config.source },
-            target: SourceOrTargetConfig { uri: config.target },
+            source: SourceOrTargetConfig { 
+                uri: config.source,
+                options: config.source_options,
+            },
+            target: SourceOrTargetConfig { 
+                uri: config.target,
+                options: config.target_options,
+            },
             options: Some(OptionsConfig {
                 batch_size: Some(config.batch_size),
                 infer_schema: Some(config.infer_schema),
@@ -75,6 +84,10 @@ impl YamlConfig {
         // Process environment variable substitution in URIs and other fields
         let source_uri = Self::substitute_env_vars(&self.source.uri)?;
         let target_uri = Self::substitute_env_vars(&self.target.uri)?;
+
+        // Process environment variable substitution in source and target options
+        let source_options = Self::substitute_env_vars_in_map(&self.source.options)?;
+        let target_options = Self::substitute_env_vars_in_map(&self.target.options)?;
 
         // Use default options if none provided
         let options = self.options.unwrap_or_default();
@@ -122,6 +135,8 @@ impl YamlConfig {
             source_type,
             source_secret_id: None, // Not used with config files - env vars are substituted directly
             dest_secret_id: None, // Not used with config files - env vars are substituted directly
+            source_options,
+            target_options,
         })
     }
 
@@ -143,6 +158,17 @@ impl YamlConfig {
 
         Ok(result)
     }
+
+    /// Substitute environment variables in all values of a HashMap
+    fn substitute_env_vars_in_map(
+        input: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        let mut result = HashMap::new();
+        for (key, value) in input {
+            result.insert(key.clone(), Self::substitute_env_vars(value)?);
+        }
+        Ok(result)
+    }
 }
 
 impl From<Config> for YamlConfig {
@@ -159,12 +185,14 @@ mod tests {
     fn test_default_source_or_target_config() {
         let config = SourceOrTargetConfig::default();
         assert_eq!(config.uri, String::new());
+        assert!(config.options.is_empty());
     }
 
     #[test]
     fn test_serialize_source_or_target_config() {
         let config = SourceOrTargetConfig {
             uri: "file://tmp/file.txt".to_string(),
+            options: HashMap::new(),
         };
 
         let serialized = serde_yaml::to_string(&config).unwrap();
@@ -180,9 +208,11 @@ mod tests {
             version: 1,
             source: SourceOrTargetConfig {
                 uri: "file://source_uri".to_string(),
+                options: HashMap::new(),
             },
             target: SourceOrTargetConfig {
                 uri: "file://target_uri".to_string(),
+                options: HashMap::new(),
             },
             options: Some(OptionsConfig {
                 batch_size: Some(5000),
@@ -200,8 +230,10 @@ mod tests {
         let expected_yaml = r#"version: 1
 source:
   uri: file://source_uri
+  options: {}
 target:
   uri: file://target_uri
+  options: {}
 options:
   batch_size: 5000
   infer_schema: true
@@ -337,6 +369,8 @@ hire_year = tonumber(string.sub(row.hire_date, 1, 4))
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         // Step 2: Convert to YamlConfig (simulate generate-config)
@@ -391,6 +425,8 @@ hire_year = tonumber(string.sub(row.hire_date, 1, 4))
             source_type: Some("csv".to_string()),
             source_secret_id: None, // Not preserved through YAML
             dest_secret_id: None,   // Not preserved through YAML
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         // Step 2: Convert to YamlConfig
@@ -449,6 +485,8 @@ hire_year = tonumber(string.sub(row.hire_date, 1, 4))
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         let yaml_config = YamlConfig::from_config(original_config.clone());
@@ -485,6 +523,8 @@ discount = total * 0.1"#;
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         let yaml_config = YamlConfig::from_config(original_config.clone());
@@ -541,6 +581,8 @@ discount = total * 0.1"#;
             source_type: Some("json".to_string()),
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         // Perform 3 round-trips
@@ -587,6 +629,8 @@ discount = total * 0.1"#;
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         let yaml_config = YamlConfig::from_config(original_config.clone());
@@ -618,6 +662,8 @@ discount = total * 0.1"#;
             source_type: None,
             source_secret_id: None,
             dest_secret_id: None,
+            source_options: HashMap::new(),
+            target_options: HashMap::new(),
         };
 
         let yaml_config = YamlConfig::from_config(original_config.clone());

@@ -4,6 +4,7 @@ use crate::{
     Result, TinyEtlError,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::process::Command;
 use tempfile::NamedTempFile;
 use tracing::info;
@@ -166,7 +167,15 @@ impl SshProtocol {
 
 #[async_trait]
 impl Protocol for SshProtocol {
-    async fn create_source(&self, url: &Url) -> Result<Box<dyn Source>> {
+    async fn create_source(
+        &self, 
+        url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Source>> {
+        // SSH protocol could use options for:
+        // - identity_file: path to SSH key
+        // - known_hosts_file: path to known_hosts
+        // - ssh_options: additional SSH options
         // Download the file via SCP to a temporary location
         let temp_file = self.download_via_scp(url).await?;
         let temp_path = temp_file.path().to_string_lossy().to_string();
@@ -177,7 +186,11 @@ impl Protocol for SshProtocol {
         create_source(&temp_path)
     }
 
-    async fn create_target(&self, _url: &Url) -> Result<Box<dyn Target>> {
+    async fn create_target(
+        &self, 
+        _url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Target>> {
         // For SSH targets, we'll create a local temporary file target
         // and then upload it after writing is complete
         // This is a simplified implementation - a full implementation would
@@ -277,10 +290,11 @@ mod tests {
     fn test_target_not_fully_supported() {
         let protocol = SshProtocol::new();
         let url = Url::parse("ssh://user@example.com/upload/file.csv").unwrap();
+        let options = std::collections::HashMap::new();
 
         // SSH target operations are not fully implemented yet
         tokio_test::block_on(async {
-            let result = protocol.create_target(&url).await;
+            let result = protocol.create_target(&url, &options).await;
             assert!(result.is_err());
         });
     }
@@ -490,10 +504,11 @@ mod tests {
     #[tokio::test]
     async fn test_create_source_url_validation() {
         let protocol = SshProtocol::new();
+        let options = std::collections::HashMap::new();
 
         // Test that create_source validates the URL before attempting download
         let invalid_url = Url::parse("ssh://example.com/file.csv").unwrap(); // Missing username
-        let result = protocol.create_source(&invalid_url).await;
+        let result = protocol.create_source(&invalid_url, &options).await;
 
         // Should fail at validation stage, not at SCP execution
         assert!(result.is_err());
@@ -502,9 +517,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_target_error_handling() {
         let protocol = SshProtocol::new();
+        let options = std::collections::HashMap::new();
 
         let url = Url::parse("ssh://user@example.com/upload/file.csv").unwrap();
-        let result = protocol.create_target(&url).await;
+        let result = protocol.create_target(&url, &options).await;
 
         assert!(result.is_err());
         if let Err(TinyEtlError::Configuration(msg)) = result {

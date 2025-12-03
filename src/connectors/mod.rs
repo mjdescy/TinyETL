@@ -164,13 +164,22 @@ pub fn create_target(connection_string: &str) -> Result<Box<dyn Target>> {
 /// Use these for new protocol support (snowflake://, onelake://, etc.)
 /// Create a source using the new protocol abstraction
 pub async fn create_source_from_url(connection_string: &str) -> Result<Box<dyn Source>> {
-    create_source_from_url_with_type(connection_string, None).await
+    create_source_from_url_with_type_and_options(connection_string, None, &std::collections::HashMap::new()).await
 }
 
 /// Create a source using the new protocol abstraction with optional type hint
 pub async fn create_source_from_url_with_type(
     connection_string: &str,
     source_type: Option<&str>,
+) -> Result<Box<dyn Source>> {
+    create_source_from_url_with_type_and_options(connection_string, source_type, &std::collections::HashMap::new()).await
+}
+
+/// Create a source using the new protocol abstraction with optional type hint and options
+pub async fn create_source_from_url_with_type_and_options(
+    connection_string: &str,
+    source_type: Option<&str>,
+    options: &std::collections::HashMap<String, String>,
 ) -> Result<Box<dyn Source>> {
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
@@ -184,10 +193,11 @@ pub async fn create_source_from_url_with_type(
             || connection_string.starts_with("sqlserver://")
             || connection_string.starts_with("odbc://")
         {
+            // Database connectors don't support protocol options yet
             create_source(connection_string)
         } else {
             // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)
-            crate::protocols::create_source_from_url_with_type(connection_string, source_type).await
+            crate::protocols::create_source_from_url_with_type(connection_string, source_type, options).await
         }
     } else {
         // Fallback to legacy connector system for backward compatibility
@@ -197,6 +207,14 @@ pub async fn create_source_from_url_with_type(
 
 /// Create a target using the new protocol abstraction
 pub async fn create_target_from_url(connection_string: &str) -> Result<Box<dyn Target>> {
+    create_target_from_url_with_options(connection_string, &std::collections::HashMap::new()).await
+}
+
+/// Create a target using the new protocol abstraction with options
+pub async fn create_target_from_url_with_options(
+    connection_string: &str,
+    options: &std::collections::HashMap<String, String>,
+) -> Result<Box<dyn Target>> {
     // Check if this looks like a protocol URL
     if connection_string.contains("://") {
         // Try database connectors first for database protocols
@@ -208,10 +226,11 @@ pub async fn create_target_from_url(connection_string: &str) -> Result<Box<dyn T
             || connection_string.starts_with("sqlserver://")
             || connection_string.starts_with("odbc://")
         {
+            // Database connectors don't support protocol options yet
             create_target(connection_string)
         } else {
             // Fall back to protocol abstraction for other protocols (file://, snowflake://, etc.)
-            crate::protocols::create_target_from_url(connection_string).await
+            crate::protocols::create_target_from_url_with_options(connection_string, options).await
         }
     } else {
         // Fallback to legacy connector system for backward compatibility

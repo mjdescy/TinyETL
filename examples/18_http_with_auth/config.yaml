@@ -1,0 +1,27 @@
+# Example: HTTP Source with Custom Headers and Authentication
+# This example demonstrates how to use protocol options to pass
+# custom headers and authentication credentials to HTTP sources.
+version: 1
+
+source:
+  uri: "https://api.example.com/data/export.csv"
+  options:
+    # Custom headers - prefix with "header."
+    header.User-Agent: "TinyETL/0.9.0"
+    header.Accept: "text/csv"
+    header.X-API-Version: "v2"
+    
+    # Basic authentication
+    auth.basic.username: "${API_USERNAME}"
+    auth.basic.password: "${API_PASSWORD}"
+    
+    # Alternative: Bearer token authentication
+    # auth.bearer: "${API_TOKEN}"
+
+target:
+  uri: "output.csv"
+  options: {}
+
+options:
+  batch_size: 1000
+  log_level: info

@@ -5,7 +5,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use tinyetl::{
     cli::Cli,
     config::Config,
-    connectors::{create_source_from_url_with_type, create_target_from_url, Source, Target},
+    connectors::{create_source_from_url_with_type_and_options, create_target_from_url_with_options, Source, Target},
     secrets::process_connection_string,
     transfer::TransferEngine,
     yaml_config::YamlConfig,
@@ -73,6 +73,8 @@ fn handle_generate_config(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             source_type,
             source_secret_id,
             dest_secret_id,
+            source_options: std::collections::HashMap::new(),
+            target_options: std::collections::HashMap::new(),
         };
 
         let yaml_config = YamlConfig::from_config(config);
@@ -214,9 +216,16 @@ async fn create_connectors(
         "destination",
     )?;
 
-    let source =
-        create_source_from_url_with_type(&processed_source, config.source_type.as_deref()).await?;
-    let target = create_target_from_url(&processed_target).await?;
+    let source = create_source_from_url_with_type_and_options(
+        &processed_source, 
+        config.source_type.as_deref(),
+        &config.source_options,
+    ).await?;
+    
+    let target = create_target_from_url_with_options(
+        &processed_target,
+        &config.target_options,
+    ).await?;
 
     Ok((source, target))
 }
@@ -250,6 +259,7 @@ async fn execute_transfer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tinyetl::connectors::{create_source_from_url_with_type, create_target_from_url};
 
     use std::process::Command;
     use tempfile::NamedTempFile;

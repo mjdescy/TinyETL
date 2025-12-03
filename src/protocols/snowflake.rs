@@ -151,12 +151,28 @@ impl SnowflakeProtocol {
 
 #[async_trait]
 impl Protocol for SnowflakeProtocol {
-    async fn create_source(&self, url: &Url) -> Result<Box<dyn Source>> {
+    async fn create_source(
+        &self, 
+        url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Source>> {
+        // Snowflake protocol could use options for:
+        // - session_parameters: additional session params
+        // - query_timeout: custom timeout
+        // - copy_options: options for COPY INTO commands
         let conn = self.parse_url(url)?;
         Ok(Box::new(SnowflakeSource::new(conn).await?))
     }
 
-    async fn create_target(&self, url: &Url) -> Result<Box<dyn Target>> {
+    async fn create_target(
+        &self, 
+        url: &Url,
+        _options: &HashMap<String, String>,
+    ) -> Result<Box<dyn Target>> {
+        // Snowflake protocol could use options for:
+        // - file_format: specify custom file format
+        // - copy_options: options for COPY INTO commands
+        // - stage_name: custom stage name
         let conn = self.parse_url(url)?;
         Ok(Box::new(SnowflakeTarget::new(conn).await?))
     }
